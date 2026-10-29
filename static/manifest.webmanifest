@@ -1,0 +1,10 @@
+{
+	"name": "Paceline Planner",
+	"short_name": "Paceline",
+	"description": "Timeboxing, priorities and honest forecasts for people who build things.",
+	"start_url": "/today",
+	"display": "standalone",
+	"background_color": "#0B0C0E",
+	"theme_color": "#0B0C0E",
+	"icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

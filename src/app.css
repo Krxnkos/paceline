@@ -1,0 +1,355 @@
+/* Paceline — L.01 tokens. Six themes, one @theme block.
+   Components use the semantic names only, never a raw hex. */
+
+/* Carbon · dark · Volt */
+:root,
+[data-theme='carbon'] {
+	color-scheme: dark;
+	--canvas: #0b0c0e;
+	--panel: #0f1013;
+	--surface: #16181c;
+	--raised: #1c1f24;
+	--hover: #1e2126;
+	--sel: #23262c;
+	--line: #24272d;
+	--line-2: #2e3238;
+	--line-3: #3a3f47;
+	--ink: #f3f2ed;
+	--ink-2: #d3d5d9;
+	--ink-3: #b9bdc4;
+	--muted: #8c929b;
+	--faint: #6b7079;
+	--accent: #d4ff3a;
+	--accent-hi: #e3ff7a;
+	--accent-ink: #0b0c0e;
+	--accent-text: #d4ff3a;
+	--flare: #ff6b4a;
+	--amber: #ffb020;
+	--ice: #7cc4ff;
+	--lilac: #c4b5ff;
+	--signal-ink: #0b0c0e;
+	--scrim: rgb(5 6 7 / 0.72);
+}
+
+/* Chalk · light · Volt */
+[data-theme='chalk'] {
+	color-scheme: light;
+	--canvas: #f3f2ed;
+	--panel: #ecebe5;
+	--surface: #fbfaf7;
+	--raised: #ffffff;
+	--hover: #e6e4dd;
+	--sel: #e1dfd7;
+	--line: #dddbd3;
+	--line-2: #cfccc3;
+	--line-3: #b9b6ac;
+	--ink: #0b0c0e;
+	--ink-2: #24272d;
+	--ink-3: #3a3f47;
+	--muted: #5b616a;
+	--faint: #7a8089;
+	--accent: #d4ff3a;
+	--accent-hi: #c6f21f;
+	--accent-ink: #0b0c0e;
+	--accent-text: #4f6a00;
+	--flare: #c2381f;
+	--amber: #9a6000;
+	--ice: #1f6fb2;
+	--lilac: #5b47c9;
+	--signal-ink: #ffffff;
+	--scrim: rgb(20 16 12 / 0.45);
+}
+
+/* Midnight · dark · Mint */
+[data-theme='midnight'] {
+	color-scheme: dark;
+	--canvas: #070b14;
+	--panel: #0b101b;
+	--surface: #111826;
+	--raised: #172033;
+	--hover: #1a2438;
+	--sel: #202b42;
+	--line: #1d2740;
+	--line-2: #2a3654;
+	--line-3: #3b4a6e;
+	--ink: #eef2fa;
+	--ink-2: #cbd3e4;
+	--ink-3: #aeb8cf;
+	--muted: #8793ad;
+	--faint: #6a7690;
+	--accent: #4df0b0;
+	--accent-hi: #8cf7cc;
+	--accent-ink: #04140d;
+	--accent-text: #4df0b0;
+	--flare: #ff7a6b;
+	--amber: #ffc247;
+	--ice: #8cc8ff;
+	--lilac: #c9b8ff;
+	--signal-ink: #070b14;
+	--scrim: rgb(7 11 20 / 0.72);
+}
+
+/* Frost · light · Mint */
+[data-theme='frost'] {
+	color-scheme: light;
+	--canvas: #eef2f5;
+	--panel: #e6ebf0;
+	--surface: #f8fafb;
+	--raised: #ffffff;
+	--hover: #dfe6ec;
+	--sel: #d8e0e8;
+	--line: #d5dde5;
+	--line-2: #c3cdd8;
+	--line-3: #a9b6c4;
+	--ink: #0b1118;
+	--ink-2: #1b2530;
+	--ink-3: #36424f;
+	--muted: #566474;
+	--faint: #76828f;
+	--accent: #2dd4a4;
+	--accent-hi: #1fbe90;
+	--accent-ink: #03160f;
+	--accent-text: #0a6b52;
+	--flare: #c43322;
+	--amber: #9a6000;
+	--ice: #1f6fb2;
+	--lilac: #5b47c9;
+	--signal-ink: #ffffff;
+	--scrim: rgb(20 16 12 / 0.45);
+}
+
+/* Ember · dark · Ember */
+[data-theme='ember'] {
+	color-scheme: dark;
+	--canvas: #0e0b09;
+	--panel: #130f0c;
+	--surface: #1a1512;
+	--raised: #211b17;
+	--hover: #241d19;
+	--sel: #2b231e;
+	--line: #2a221d;
+	--line-2: #3a2f28;
+	--line-3: #4d3f36;
+	--ink: #f6efe8;
+	--ink-2: #ddd3c8;
+	--ink-3: #c2b6a9;
+	--muted: #9a8d80;
+	--faint: #7a6e63;
+	--accent: #ff9a3d;
+	--accent-hi: #ffb36b;
+	--accent-ink: #140a02;
+	--accent-text: #ff9a3d;
+	--flare: #ff5c72;
+	--amber: #f0d24e;
+	--ice: #7fc8f2;
+	--lilac: #c9b3ff;
+	--signal-ink: #0e0b09;
+	--scrim: rgb(14 11 9 / 0.72);
+}
+
+/* Sand · light · Ember */
+[data-theme='sand'] {
+	color-scheme: light;
+	--canvas: #f6efe6;
+	--panel: #efe6da;
+	--surface: #fcf8f2;
+	--raised: #ffffff;
+	--hover: #e9dfd1;
+	--sel: #e3d8c8;
+	--line: #e0d5c6;
+	--line-2: #d1c4b2;
+	--line-3: #b8a892;
+	--ink: #17110b;
+	--ink-2: #2f251c;
+	--ink-3: #4a3d31;
+	--muted: #6b5b4c;
+	--faint: #8a7968;
+	--accent: #ff8a1f;
+	--accent-hi: #f07808;
+	--accent-ink: #1c0e00;
+	--accent-text: #a63f00;
+	--flare: #c9302c;
+	--amber: #8a6500;
+	--ice: #1f6fb2;
+	--lilac: #5b47c9;
+	--signal-ink: #ffffff;
+	--scrim: rgb(20 16 12 / 0.45);
+}
+
+@import 'tailwindcss';
+
+@theme inline {
+	--color-*: initial;
+	--shadow-*: initial;
+	--color-canvas: var(--canvas);
+	--color-panel: var(--panel);
+	--color-surface: var(--surface);
+	--color-raised: var(--raised);
+	--color-hover: var(--hover);
+	--color-sel: var(--sel);
+	--color-line: var(--line);
+	--color-line-2: var(--line-2);
+	--color-line-3: var(--line-3);
+	--color-ink: var(--ink);
+	--color-ink-2: var(--ink-2);
+	--color-ink-3: var(--ink-3);
+	--color-muted: var(--muted);
+	--color-faint: var(--faint);
+	--color-accent: var(--accent);
+	--color-accent-hi: var(--accent-hi);
+	--color-accent-ink: var(--accent-ink);
+	--color-accent-text: var(--accent-text);
+	--color-flare: var(--flare);
+	--color-amber: var(--amber);
+	--color-ice: var(--ice);
+	--color-lilac: var(--lilac);
+	--color-signal-ink: var(--signal-ink);
+	--color-scrim: var(--scrim);
+	--color-transparent: transparent;
+	--color-current: currentColor;
+	--font-sans: 'Archivo', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--radius-xs: 2px;
+	--breakpoint-nav: 860px;
+	--breakpoint-wide: 1100px;
+}
+
+@layer base {
+	html {
+		font-family: var(--font-sans);
+		background: var(--canvas);
+		color: var(--ink);
+		-webkit-font-smoothing: antialiased;
+	}
+	body {
+		margin: 0;
+		background: var(--canvas);
+		min-height: 100dvh;
+	}
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	::selection {
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+	button {
+		cursor: pointer;
+	}
+	button:disabled {
+		cursor: not-allowed;
+	}
+	input::placeholder,
+	textarea::placeholder {
+		color: var(--faint);
+	}
+	dialog {
+		color: var(--ink);
+		max-width: none;
+		max-height: none;
+		padding: 0;
+		margin: 0;
+		border: 0;
+		background: transparent;
+	}
+	dialog::backdrop {
+		background: var(--scrim);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			transition-duration: 0.01ms !important;
+		}
+	}
+}
+
+/* Display type: the 14° lean */
+@utility display {
+	font-weight: 900;
+	font-style: italic;
+	font-stretch: 125%;
+	letter-spacing: -0.01em;
+	line-height: 1;
+}
+
+/* Upright heavy heads used on page titles */
+@utility heavy {
+	font-weight: 900;
+	font-stretch: 125%;
+	letter-spacing: -0.02em;
+	line-height: 0.98;
+}
+
+@utility wide {
+	font-stretch: 125%;
+}
+
+@utility eyebrow {
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	font-weight: 500;
+	color: var(--muted);
+}
+
+@utility hatch {
+	background: repeating-linear-gradient(
+		135deg,
+		color-mix(in oklab, var(--ink) 3.5%, transparent) 0 6px,
+		transparent 6px 12px
+	);
+}
+
+@utility hatch-fine {
+	background: repeating-linear-gradient(-45deg, var(--surface) 0 3px, var(--canvas) 3px 6px);
+}
+
+@utility data {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+@keyframes pop {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+@keyframes slide-in {
+	from {
+		opacity: 0;
+		transform: translateX(24px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+@keyframes sk {
+	to {
+		background-position: -200% 0;
+	}
+}
+
+@utility animate-pop {
+	animation: pop 150ms ease-out;
+}
+@utility animate-slide {
+	animation: slide-in 180ms ease-out;
+}
+@utility animate-blink {
+	animation: blink 1s steps(1) infinite;
+}
