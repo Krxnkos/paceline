@@ -11,10 +11,14 @@
 
 	type Screen = 'signin' | 'signup' | 'code' | 'reset' | 'resetSent' | 'newPassword' | 'done';
 
-	let { initial = 'signin' }: { initial?: 'signin' | 'signup' | 'reset' } = $props();
+	let {
+		initial = 'signin',
+		token = ''
+	}: { initial?: 'signin' | 'signup' | 'reset'; token?: string } = $props();
 
+	// A reset link (/reset?token=…) opens straight on the new-password form.
 	// svelte-ignore state_referenced_locally
-	let screen = $state<Screen>(initial);
+	let screen = $state<Screen>(token ? 'newPassword' : initial);
 	let codeFor = $state<'verify' | 'mfa'>('mfa');
 	let via = $state<'email' | 'new'>('email');
 	let email = $state('');
@@ -36,7 +40,7 @@
 	);
 
 	function go(next: Screen, path?: string) {
-		if (next === 'done' && auth.user) workspace.load(auth.user.id);
+		if (next === 'done' && auth.user) void workspace.load(auth.user.id);
 		screen = next;
 		errors = {};
 		code = '';
@@ -54,9 +58,9 @@
 		busy = true;
 		const res = await auth.signIn(email, password, remember);
 		busy = false;
-		if (!res.ok) return (errors = { [res.field ?? 'pw']: res.error });
+		if (!res.ok) return (errors = { pw: res.error ?? 'Could not sign in.' });
 		if (res.needCode) {
-			codeFor = auth.pending?.kind === 'verify' ? 'verify' : 'mfa';
+			codeFor = res.purpose ?? 'mfa';
 			go('code');
 		} else {
 			via = 'email';
@@ -75,24 +79,33 @@
 		busy = true;
 		const res = await auth.signUp(name, email, password);
 		busy = false;
-		if (!res.ok) return (errors = { email: res.error ?? 'Could not create the account.' });
+		if (!res.ok)
+			return (errors =
+				res.status === 400 && /password|rules/i.test(res.error ?? '')
+					? { pw: res.error! }
+					: { email: res.error ?? 'Could not create the account.' });
 		codeFor = 'verify';
 		go('code');
 	}
 
-	function submitCode(e: SubmitEvent) {
+	async function submitCode(e: SubmitEvent) {
 		e.preventDefault();
 		if (!/^\d{6}$/.test(code)) return (errors = { code: 'Enter all 6 digits.' });
-		const res = auth.verifyCode(code);
+		busy = true;
+		const res = await auth.verifyCode(code);
+		busy = false;
 		if (!res.ok) return (errors = { code: res.error ?? 'That code isn’t right.' });
 		via = codeFor === 'verify' ? 'new' : 'email';
 		go('done');
 	}
 
-	function submitReset(e: SubmitEvent) {
+	async function submitReset(e: SubmitEvent) {
 		e.preventDefault();
 		if (!validEmail(email)) return (errors = { email: 'Enter the email you sign in with.' });
-		auth.requestReset(email);
+		busy = true;
+		const res = await auth.requestReset(email);
+		busy = false;
+		if (!res.ok) return (errors = { email: res.error ?? 'Could not send the link.' });
 		go('resetSent');
 	}
 
@@ -100,7 +113,7 @@
 		e.preventDefault();
 		if (score < 4) return (errors = { pw: 'Meet all four rules to keep your plans safe.' });
 		busy = true;
-		const res = await auth.resetPassword(code, password);
+		const res = await auth.resetPassword(token, password);
 		busy = false;
 		if (!res.ok) return (errors = { pw: res.error ?? 'Could not reset the password.' });
 		password = '';
@@ -108,8 +121,8 @@
 		note = 'Password updated. Sign in with the new one.';
 	}
 
-	function openToday() {
-		if (auth.user) workspace.load(auth.user.id);
+	async function openToday() {
+		if (auth.user) await workspace.load(auth.user.id);
 		goto(workspace.data ? '/today' : '/onboarding');
 	}
 
@@ -190,12 +203,12 @@
 {/snippet}
 
 {#snippet localCode()}
-	{#if auth.localCode}
+	{#if auth.devCode}
 		<div
 			class="border border-dashed border-line-3 px-3.5 py-3 font-mono text-[11px] leading-relaxed tracking-[0.08em] text-muted uppercase"
 		>
-			Local mode · no email server is connected.<br />Your code is
-			<span class="text-[14px] tracking-[0.3em] text-accent-text">{auth.localCode}</span>
+			Development · no email provider is set.<br />Your code is
+			<span class="text-[14px] tracking-[0.3em] text-accent-text">{auth.devCode}</span>
 		</div>
 	{/if}
 {/snippet}
@@ -295,16 +308,14 @@
 						<button
 							type="button"
 							onclick={() =>
-								(note =
-									'Passkeys need a hosted account. They switch on when you connect Supabase (see README).')}
+								(note = 'Passkeys aren’t available yet. Sign in with your email and password.')}
 							class="inline-flex h-12 items-center justify-center gap-2.5 bg-ink text-sm font-bold text-canvas hover:opacity-90"
 							><Icon name="key" />Use a passkey</button
 						>
 						<button
 							type="button"
 							onclick={() =>
-								(note =
-									'Work SSO needs a hosted account. It switches on when you connect Supabase (see README).')}
+								(note = 'Work SSO isn’t available yet. Sign in with your email and password.')}
 							class="inline-flex h-12 items-center justify-center gap-2.5 border border-line-3 text-sm font-bold text-ink hover:bg-hover"
 							><Icon name="sso" />Work SSO</button
 						>
@@ -426,7 +437,7 @@
 						<button
 							type="button"
 							class="pl-link"
-							onclick={() => ((auth.pending = null), go('signin', '/login'))}>Back</button
+							onclick={() => (auth.cancelPending(), go('signin', '/login'))}>Back</button
 						>
 						<button type="button" class="pl-link" onclick={() => (auth.resend(), (resent = true))}
 							>{resent ? 'Code sent again' : 'Resend code'}</button
@@ -459,22 +470,6 @@
 						If an account exists for <strong class="text-ink">{email}</strong>, a reset link is on
 						its way. For your security we don’t confirm whether an address is registered.
 					</p>
-					{#if auth.pending?.kind === 'reset'}
-						<div class="flex flex-col gap-3 border border-dashed border-line-3 px-3.5 py-3">
-							<span class="font-mono text-[11px] tracking-[0.08em] text-muted uppercase"
-								>Local mode · no email server is connected</span
-							>
-							<button
-								type="button"
-								class="pl-link self-start"
-								onclick={() => {
-									const c = auth.pending?.code ?? '';
-									go('newPassword');
-									code = c;
-								}}>Open the reset link on this device</button
-							>
-						</div>
-					{/if}
 					<button
 						type="button"
 						class="h-12 border border-line-3 text-sm font-bold text-ink hover:bg-hover"
@@ -486,7 +481,7 @@
 					<div class="flex flex-col gap-2">
 						<h2 class="m-0 text-[30px] font-extrabold wide">Choose a new password</h2>
 						<p class="m-0 text-[15px] leading-normal text-ink-3">
-							For {email}. Other sessions are signed out.
+							The link works once. Every other device is signed out.
 						</p>
 					</div>
 					{@render pwField('new-password', '12+ characters', true)}
@@ -510,8 +505,8 @@
 					<button
 						type="button"
 						class="pl-link self-start"
-						onclick={() => {
-							auth.signOut();
+						onclick={async () => {
+							await auth.signOut();
 							workspace.unload();
 							password = '';
 							go('signin', '/login');

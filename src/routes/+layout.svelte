@@ -11,7 +11,7 @@
 
 	theme.init();
 	clock.start();
-	auth.init();
+	void auth.init();
 	focus.init();
 </script>
 

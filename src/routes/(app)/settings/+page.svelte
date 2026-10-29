@@ -293,8 +293,8 @@
 	<Panel title="Your data">
 		<div class="flex flex-col gap-4 p-[18px]">
 			<p class="m-0 text-sm text-ink-3">
-				Your plan lives in this browser and is never sent anywhere. Export it to back it up or move
-				it to another device.
+				Your plan is saved to your private Paceline database and follows you to every device you
+				sign in on. Export a copy any time.
 			</p>
 			<div class="flex flex-wrap gap-2.5">
 				<Button icon="download" onclick={exportData}>Export JSON</Button>
@@ -336,12 +336,14 @@
 		<div class="flex flex-col gap-4 p-[18px]">
 			<form
 				class="flex flex-wrap items-end gap-2.5"
-				onsubmit={(e) => {
+				onsubmit={async (e) => {
 					e.preventDefault();
-					if (name.trim().length >= 2) {
-						auth.rename(name);
-						toast('Name saved');
-					}
+					if (name.trim().length < 2) return;
+					const r = await auth.rename(name.trim());
+					toast(
+						r.ok ? 'Name saved' : (r.error ?? 'Could not save the name'),
+						r.ok ? {} : { tone: 'err' }
+					);
 				}}
 			>
 				<Field label="Name" class="min-w-60 flex-1"
@@ -350,13 +352,13 @@
 				<Button type="submit">Save</Button>
 			</form>
 			<div class="font-mono text-xs text-muted">
-				{auth.user?.email} · local account on this device
+				{auth.user?.email} · synced · private to you
 			</div>
 			<div class="flex flex-wrap gap-2.5 border-t border-line pt-4">
 				<Button
 					icon="logout"
-					onclick={() => {
-						auth.signOut();
+					onclick={async () => {
+						await auth.signOut();
 						workspace.unload();
 						goto('/login');
 					}}>Sign out</Button
@@ -364,8 +366,9 @@
 				<ConfirmButton
 					label="Delete account"
 					confirmLabel="Confirm: delete account and plan"
-					onconfirm={() => {
-						auth.deleteAccount();
+					onconfirm={async () => {
+						const r = await auth.deleteAccount();
+						if (!r.ok) return toast(r.error ?? 'Could not delete the account', { tone: 'err' });
 						workspace.unload();
 						goto('/login');
 					}}

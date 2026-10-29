@@ -6,8 +6,11 @@ import { alerts, code } from '../domain/forecast.ts';
 import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.ts';
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
+import { api } from './auth.svelte.ts';
 
-const KEY = (userId: string) => `pl-ws:${userId}`;
+/** Offline cache only; MongoDB is the source of truth. */
+const CACHE = (userId: string) => `pl-ws-cache:${userId}`;
+const SAVE_DELAY = 600;
 const UNDO_LIMIT = 30;
 
 function nextDue(due: string, repeat: Task['repeat']): string {
@@ -50,38 +53,150 @@ class WorkspaceStore {
 	);
 	inboxCount = $derived(this.tasks.filter((t) => t.inbox && t.status !== 'done').length);
 
-	load(userId: string) {
-		if (this.userId === userId && this.data) return;
+	status = $state<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle');
+	#version = 0;
+	#timer: ReturnType<typeof setTimeout> | null = null;
+	#inflight = false;
+	#dirty = false;
+
+	/** Load this person's plan from the server, showing the cached copy meanwhile. */
+	async load(userId: string) {
+		if (this.userId === userId && this.status !== 'idle' && this.status !== 'error') return;
 		this.userId = userId;
+		this.status = 'loading';
 		this.#undo = [];
 		this.canUndo = false;
-		try {
-			const raw = localStorage.getItem(KEY(userId));
-			this.data = raw ? (JSON.parse(raw) as Workspace) : null;
-		} catch {
-			this.data = null;
+		const cached = this.#readCache(userId);
+		if (cached) {
+			this.data = cached.data;
+			this.#version = cached.version;
+			this.#dirty = cached.dirty;
 		}
+		const r = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+		if (this.userId !== userId) return;
+		if (!r.ok) {
+			// Offline: carry on from the cache and sync when the connection returns.
+			this.saving = 'offline';
+			this.status = this.data ? 'ready' : 'error';
+			return;
+		}
+		if (cached?.dirty && cached.version === r.data!.version) {
+			// Unsent local edits made offline on top of the latest server copy.
+			this.status = 'ready';
+			this.#queue(0);
+			return;
+		}
+		this.data = r.data!.data;
+		this.#version = r.data!.version;
+		this.#dirty = false;
+		this.#writeCache();
+		this.saving = 'synced';
+		this.status = this.data ? 'ready' : 'empty';
 	}
 
 	unload() {
+		if (this.#timer) clearTimeout(this.#timer);
 		this.userId = null;
 		this.data = null;
+		this.status = 'idle';
+		this.#version = 0;
+		this.#dirty = false;
 	}
 
 	start(kind: 'example' | 'blank') {
 		this.data = kind === 'example' ? exampleWorkspace(clock.today) : blankWorkspace(clock.today);
+		this.status = 'ready';
 		this.#persist();
+	}
+
+	#readCache(userId: string): { data: Workspace; version: number; dirty: boolean } | null {
+		try {
+			const raw = localStorage.getItem(CACHE(userId));
+			return raw ? JSON.parse(raw) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	#writeCache() {
+		if (!this.userId || !this.data) return;
+		try {
+			localStorage.setItem(
+				CACHE(this.userId),
+				JSON.stringify({
+					data: $state.snapshot(this.data),
+					version: this.#version,
+					dirty: this.#dirty
+				})
+			);
+		} catch {
+			/* storage full or blocked: the server copy still saves */
+		}
 	}
 
 	#persist() {
 		if (!this.userId || !this.data) return;
+		this.#dirty = true;
 		this.saving = 'saving';
-		try {
-			localStorage.setItem(KEY(this.userId), JSON.stringify($state.snapshot(this.data)));
-			this.saving = 'synced';
-		} catch {
-			this.saving = 'offline';
+		this.#writeCache();
+		this.#queue(SAVE_DELAY);
+	}
+
+	#queue(delay: number) {
+		if (this.#timer) clearTimeout(this.#timer);
+		this.#timer = setTimeout(() => this.#flush(), delay);
+	}
+
+	/** Send the latest copy. Edits made while a save is in flight go out right after it. */
+	async #flush() {
+		if (this.#inflight || !this.#dirty || !this.data || !this.userId) return;
+		this.#inflight = true;
+		this.#dirty = false;
+		const userId = this.userId;
+		const r = await api<{ version?: number; conflict?: boolean; data?: Workspace | null }>(
+			'PUT',
+			'/api/workspace',
+			{
+				data: $state.snapshot(this.data),
+				version: this.#version
+			}
+		);
+		this.#inflight = false;
+		if (this.userId !== userId) return;
+		if (r.ok && r.data?.version) {
+			this.#version = r.data.version;
+			this.saving = this.#dirty ? 'saving' : 'synced';
+			this.#writeCache();
+			if (this.#dirty) this.#queue(0);
+			return;
 		}
+		if (r.status === 409 && r.data?.conflict) {
+			// Another device saved first. Take its copy rather than overwrite it.
+			this.data = r.data.data ?? this.data;
+			this.#version = r.data.version ?? this.#version;
+			this.#dirty = false;
+			this.#undo = [];
+			this.canUndo = false;
+			this.saving = 'synced';
+			this.#writeCache();
+			toast('Updated from another device · your last change there won', { tone: 'err' });
+			return;
+		}
+		if (r.status === 401) {
+			this.saving = 'offline';
+			toast('Your session ended. Sign in again to save.', { tone: 'err' });
+			return;
+		}
+		// Offline or a server hiccup: keep the edit and retry.
+		this.#dirty = true;
+		this.saving = 'offline';
+		this.#writeCache();
+		this.#queue(r.status === 0 ? 10_000 : 5_000);
+	}
+
+	/** Push unsent changes now (e.g. when the connection comes back). */
+	retry() {
+		if (this.#dirty) this.#queue(0);
 	}
 
 	#checkpoint() {

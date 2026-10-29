@@ -26,10 +26,10 @@
 		page.url.pathname === n.href || page.url.pathname.startsWith(n.href + '/');
 	const syncLabel = $derived(
 		workspace.saving === 'offline'
-			? 'Offline · saved locally'
+			? 'Offline · will sync'
 			: workspace.saving === 'saving'
 				? 'Saving…'
-				: 'Saved · private'
+				: 'Synced · private'
 	);
 
 	function cycleTheme() {
@@ -41,7 +41,7 @@
 
 	async function signOut() {
 		menuOpen = false;
-		auth.signOut();
+		await auth.signOut();
 		workspace.unload();
 		await goto('/login');
 	}

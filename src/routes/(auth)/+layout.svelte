@@ -7,7 +7,8 @@
 	let { children }: LayoutProps = $props();
 
 	// Signed-in visitors skip the login screens.
-	onMount(() => {
+	onMount(async () => {
+		await auth.init();
 		if (auth.user) goto('/today', { replace: true });
 	});
 </script>
