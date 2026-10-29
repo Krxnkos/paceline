@@ -17,7 +17,10 @@
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
 		"test:unit": "vitest",
-		"test": "npm run test:unit -- --run"
+		"test": "npm run test:unit -- --run",
+		"deploy:db": "wrangler deploy -c workers/db/wrangler.jsonc",
+		"deploy": "npm run build && wrangler deploy",
+		"tail": "wrangler tail paceline"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^5.20261029.1",
