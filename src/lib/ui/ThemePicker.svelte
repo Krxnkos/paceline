@@ -3,9 +3,15 @@
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import type { ThemeChoice } from '../types.ts';
 	import Segmented from './Segmented.svelte';
+	import { toast } from '../stores/toast.svelte.ts';
 
 	// Each preview is drawn from fixed hex values so every card shows its own theme.
+	const locked = (t: (typeof THEMES)[number]) =>
+		workspace.tier.themes !== 'all' && t.family !== 'Volt';
+
 	function pick(choice: ThemeChoice) {
+		const t = THEMES.find((x) => x.id === choice);
+		if (t && locked(t)) return toast(`${t.label} is a Pro theme.`, { tone: 'err' });
 		theme.set(choice);
 		if (workspace.data) workspace.updateSettings({ theme: choice });
 	}
@@ -65,7 +71,7 @@
 				<span class="flex flex-col px-0.5">
 					<span class="text-[13.5px] font-bold text-ink">{t.label}</span>
 					<span class="font-mono text-[10px] tracking-[0.1em] text-muted uppercase"
-						>{t.mode} · {t.family}</span
+						>{locked(t) ? 'Pro' : `${t.mode} · ${t.family}`}</span
 					>
 				</span>
 			</button>

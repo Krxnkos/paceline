@@ -1,0 +1,5 @@
+# Copy to .env for `npm run dev` (Vite) — all optional in development.
+# Without MONGODB_URI an in-memory MongoDB is used; without RESEND_API_KEY codes are shown on screen.
+MONGODB_URI=
+RESEND_API_KEY=
+SIGNUP_ALLOWLIST=

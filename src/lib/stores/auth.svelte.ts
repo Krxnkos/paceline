@@ -1,292 +1,176 @@
 /**
- * Local-mode authentication.
- *
- * Accounts live in this browser only. Passwords are salted and hashed with
- * PBKDF2 (WebCrypto) and never stored in plain text. There is no email server,
- * so one-time codes are shown on screen ("local mode"). The public API mirrors
- * what a hosted provider (Supabase, see README) would expose, so swapping the
- * internals later doesn't touch the screens.
+ * Accounts live on the server (MongoDB, behind /api/auth). The session is an
+ * httpOnly cookie the browser never reads; this store only mirrors who is
+ * signed in and which step of a sign-in is pending.
  */
+import type { Tier } from '../tiers.ts';
+
+export { PW_RULES, validEmail } from '../auth-rules.ts';
 
 export interface User {
 	id: string;
 	name: string;
 	email: string;
+	tier: Tier;
+	developer: boolean;
 }
 
-interface Account extends User {
-	salt: string;
-	hash: string;
-	verified: boolean;
-	createdAt: string;
+export type Purpose = 'verify' | 'mfa';
+
+export interface ApiResult<T = Record<string, unknown>> {
+	ok: boolean;
+	status: number;
+	error?: string;
+	data?: T;
 }
 
-interface Session {
-	userId: string;
-	expires: number;
-}
-
-type Pending =
-	| { kind: 'verify'; userId: string; code: string; remember: boolean }
-	| { kind: 'mfa'; userId: string; code: string; remember: boolean }
-	| { kind: 'reset'; userId: string; code: string };
-
-const ACCOUNTS = 'pl-accounts';
-const SESSION = 'pl-session';
-const TRUST = 'pl-trusted';
-const LOCKS = 'pl-locks';
-const DAY = 86_400_000;
-
-export const PW_RULES = [
-	{ label: '12+ characters', test: (p: string) => p.length >= 12 },
-	{ label: 'A number', test: (p: string) => /\d/.test(p) },
-	{ label: 'Upper + lower case', test: (p: string) => /[a-z]/.test(p) && /[A-Z]/.test(p) },
-	{ label: 'A symbol', test: (p: string) => /[^A-Za-z0-9]/.test(p) }
-];
-
-export const validEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e.trim());
-
-function read<T>(store: Storage | undefined, key: string, fallback: T): T {
+/** JSON request to our own API. Never throws: network failures come back as `ok: false`. */
+export async function api<T = Record<string, unknown>>(
+	method: string,
+	path: string,
+	body?: unknown
+): Promise<ApiResult<T>> {
 	try {
-		const raw = store?.getItem(key);
-		return raw ? (JSON.parse(raw) as T) : fallback;
+		const res = await fetch(path, {
+			method,
+			credentials: 'same-origin',
+			headers: body === undefined ? {} : { 'content-type': 'application/json' },
+			body: body === undefined ? undefined : JSON.stringify(body)
+		});
+		const data = (await res.json().catch(() => ({}))) as T & { message?: string };
+		return res.ok
+			? { ok: true, status: res.status, data }
+			: { ok: false, status: res.status, error: data?.message ?? 'Something went wrong.', data };
 	} catch {
-		return fallback;
+		return { ok: false, status: 0, error: 'You’re offline. Check your connection and try again.' };
 	}
 }
 
-function write(store: Storage | undefined, key: string, value: unknown) {
+/** Remove data this browser holds about the signed-in person (and the old local-mode keys). */
+export function clearLocalData() {
 	try {
-		if (value === null) store?.removeItem(key);
-		else store?.setItem(key, JSON.stringify(value));
+		for (const k of Object.keys(localStorage))
+			if (/^pl-(ws-cache:|ws:|accounts$|session$|trusted$|locks$|focus$)/.test(k))
+				localStorage.removeItem(k);
+		sessionStorage.removeItem('pl-session');
 	} catch {
 		/* storage blocked */
 	}
 }
 
-const ls = () => (typeof localStorage === 'undefined' ? undefined : localStorage);
-const ss = () => (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
-
-const b64 = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-
-async function hashPassword(password: string, salt: string): Promise<string> {
-	const key = await crypto.subtle.importKey(
-		'raw',
-		new TextEncoder().encode(password),
-		'PBKDF2',
-		false,
-		['deriveBits']
-	);
-	const bits = await crypto.subtle.deriveBits(
-		{ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 210_000 },
-		key,
-		256
-	);
-	return b64(bits);
+/** Local-mode leftovers from before accounts moved to the server, including password hashes. */
+function clearLegacy() {
+	try {
+		for (const k of Object.keys(localStorage))
+			if (/^pl-(ws:|accounts$|session$|trusted$|locks$)/.test(k)) localStorage.removeItem(k);
+	} catch {
+		/* storage blocked */
+	}
 }
 
-function sixDigits(): string {
-	const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
-	return String(n).padStart(6, '0');
+interface CodeStep {
+	needCode: true;
+	purpose: Purpose;
+	devCode?: string;
 }
-
-function uuid(): string {
-	return crypto.randomUUID();
-}
-
-export type SignInResult =
-	{ ok: true; needCode: boolean } | { ok: false; error: string; field?: 'email' | 'pw' };
 
 class Auth {
 	user = $state<User | null>(null);
 	ready = $state(false);
-	pending = $state<Pending | null>(null);
-	/** The code to show on screen while there's no email server. */
-	localCode = $derived(this.pending?.code ?? null);
+	/** The sign-in waiting on a 6-digit code. */
+	pending = $state<{ email: string; purpose: Purpose } | null>(null);
+	/** Development only, when no email provider is set: the code to show on screen. */
+	devCode = $state<string | null>(null);
 
-	init() {
-		if (this.ready) return;
-		const s =
-			read<Session | null>(ls(), SESSION, null) ?? read<Session | null>(ss(), SESSION, null);
-		if (s && s.expires > Date.now()) {
-			const a = this.#accounts().find((x) => x.id === s.userId);
-			if (a) this.user = { id: a.id, name: a.name, email: a.email };
-		}
-		this.ready = true;
+	#init: Promise<void> | null = null;
+
+	/** Ask the server who is signed in. Safe to call repeatedly. */
+	init(): Promise<void> {
+		clearLegacy();
+		this.#init ??= api<{ user: User | null }>('GET', '/api/auth/me').then((r) => {
+			this.user = r.data?.user ?? null;
+			this.ready = true;
+		});
+		return this.#init;
 	}
 
-	#accounts(): Account[] {
-		return read<Account[]>(ls(), ACCOUNTS, []);
+	#step(email: string, d: CodeStep) {
+		this.pending = { email, purpose: d.purpose };
+		this.devCode = d.devCode ?? null;
 	}
 
-	#save(accounts: Account[]) {
-		write(ls(), ACCOUNTS, accounts);
+	async signUp(name: string, email: string, password: string) {
+		const r = await api<CodeStep>('POST', '/api/auth/signup', { name, email, password });
+		if (r.ok && r.data) this.#step(email.trim().toLowerCase(), r.data);
+		return r;
 	}
 
-	#find(email: string) {
-		return this.#accounts().find((a) => a.email.toLowerCase() === email.trim().toLowerCase());
-	}
-
-	#lock(email: string): number {
-		const locks = read<Record<string, { n: number; until: number }>>(ls(), LOCKS, {});
-		const l = locks[email.toLowerCase()];
-		return l && l.until > Date.now() ? l.until : 0;
-	}
-
-	#fail(email: string) {
-		const locks = read<Record<string, { n: number; until: number }>>(ls(), LOCKS, {});
-		const k = email.toLowerCase();
-		const l = locks[k] ?? { n: 0, until: 0 };
-		l.n += 1;
-		if (l.n >= 5) {
-			l.until = Date.now() + 15 * 60_000;
-			l.n = 0;
-		}
-		locks[k] = l;
-		write(ls(), LOCKS, locks);
-	}
-
-	#clearFails(email: string) {
-		const locks = read<Record<string, unknown>>(ls(), LOCKS, {});
-		delete locks[email.toLowerCase()];
-		write(ls(), LOCKS, locks);
-	}
-
-	#trusted(userId: string) {
-		const t = read<Record<string, number>>(ls(), TRUST, {});
-		return (t[userId] ?? 0) > Date.now();
-	}
-
-	#start(a: Account, remember: boolean) {
-		const session: Session = { userId: a.id, expires: Date.now() + 30 * DAY };
-		write(ls(), SESSION, null);
-		write(ss(), SESSION, null);
-		write(remember ? ls() : ss(), SESSION, session);
-		if (remember) {
-			const t = read<Record<string, number>>(ls(), TRUST, {});
-			t[a.id] = Date.now() + 30 * DAY;
-			write(ls(), TRUST, t);
-		}
-		this.user = { id: a.id, name: a.name, email: a.email };
-		this.pending = null;
-	}
-
-	async signUp(
-		name: string,
-		email: string,
-		password: string
-	): Promise<{ ok: boolean; error?: string }> {
-		if (this.#find(email))
-			return { ok: false, error: 'An account with that email already exists. Sign in instead.' };
-		const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
-		const a: Account = {
-			id: uuid(),
-			name: name.trim(),
-			email: email.trim(),
-			salt,
-			hash: await hashPassword(password, salt),
-			verified: false,
-			createdAt: new Date().toISOString()
-		};
-		this.#save([...this.#accounts(), a]);
-		this.pending = { kind: 'verify', userId: a.id, code: sixDigits(), remember: true };
-		return { ok: true };
-	}
-
-	async signIn(email: string, password: string, remember: boolean): Promise<SignInResult> {
-		const until = this.#lock(email);
-		if (until) {
-			const mins = Math.ceil((until - Date.now()) / 60_000);
-			return {
-				ok: false,
-				error: `Too many tries. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
-				field: 'pw'
-			};
-		}
-		const a = this.#find(email);
-		const hash = a ? await hashPassword(password, a.salt) : null;
-		if (!a || hash !== a.hash) {
-			this.#fail(email);
-			return { ok: false, error: 'That email and password don’t match.', field: 'pw' };
-		}
-		this.#clearFails(email);
-		if (a.verified && this.#trusted(a.id)) {
-			this.#start(a, remember);
-			return { ok: true, needCode: false };
-		}
-		this.pending = {
-			kind: a.verified ? 'mfa' : 'verify',
-			userId: a.id,
-			code: sixDigits(),
+	async signIn(email: string, password: string, remember: boolean) {
+		const r = await api<{ user?: User } & Partial<CodeStep>>('POST', '/api/auth/signin', {
+			email,
+			password,
 			remember
-		};
-		return { ok: true, needCode: true };
+		});
+		if (r.ok && r.data?.user) this.user = r.data.user;
+		else if (r.ok && r.data?.needCode) this.#step(email.trim().toLowerCase(), r.data as CodeStep);
+		return { ...r, needCode: !!r.data?.needCode, purpose: r.data?.purpose };
 	}
 
-	verifyCode(code: string): { ok: boolean; error?: string } {
-		const p = this.pending;
-		if (!p || p.kind === 'reset')
-			return { ok: false, error: 'That code has expired. Start again.' };
-		if (code !== p.code)
-			return { ok: false, error: 'That code isn’t right. Check it and try again.' };
-		const accounts = this.#accounts();
-		const a = accounts.find((x) => x.id === p.userId);
-		if (!a) return { ok: false, error: 'Account not found.' };
-		a.verified = true;
-		this.#save(accounts);
-		this.#start(a, p.remember);
-		return { ok: true };
+	async verifyCode(code: string) {
+		if (!this.pending) return { ok: false, status: 400, error: 'Start again.' } as ApiResult;
+		const r = await api<{ user: User; created: boolean }>('POST', '/api/auth/verify', {
+			...this.pending,
+			code
+		});
+		if (r.ok && r.data) {
+			this.user = r.data.user;
+			this.pending = null;
+			this.devCode = null;
+		}
+		return r;
 	}
 
-	resend() {
-		if (this.pending) this.pending = { ...this.pending, code: sixDigits() };
+	async resend() {
+		if (!this.pending) return;
+		const r = await api<Partial<CodeStep>>('POST', '/api/auth/resend', this.pending);
+		if (r.data?.devCode) this.devCode = r.data.devCode;
+		return r;
 	}
 
-	/** Always succeeds, so nobody can probe which emails are registered. */
 	requestReset(email: string) {
-		const a = this.#find(email);
-		this.pending = a ? { kind: 'reset', userId: a.id, code: sixDigits() } : null;
+		return api('POST', '/api/auth/reset/request', { email });
 	}
 
-	async resetPassword(code: string, password: string): Promise<{ ok: boolean; error?: string }> {
-		const p = this.pending;
-		if (!p || p.kind !== 'reset' || p.code !== code)
-			return { ok: false, error: 'That reset link has expired.' };
-		const accounts = this.#accounts();
-		const a = accounts.find((x) => x.id === p.userId);
-		if (!a) return { ok: false, error: 'Account not found.' };
-		a.salt = b64(crypto.getRandomValues(new Uint8Array(16)));
-		a.hash = await hashPassword(password, a.salt);
-		a.verified = true;
-		this.#save(accounts);
-		this.#clearFails(a.email);
-		this.pending = null;
-		return { ok: true };
+	resetPassword(token: string, password: string) {
+		return api('POST', '/api/auth/reset/confirm', { token, password });
 	}
 
-	rename(name: string) {
-		if (!this.user) return;
-		const accounts = this.#accounts();
-		const a = accounts.find((x) => x.id === this.user!.id);
-		if (!a) return;
-		a.name = name.trim();
-		this.#save(accounts);
-		this.user = { ...this.user, name: a.name };
+	async rename(name: string) {
+		const r = await api<{ user: User }>('PATCH', '/api/account', { name });
+		if (r.ok && r.data) this.user = r.data.user;
+		return r;
 	}
 
-	deleteAccount() {
-		if (!this.user) return;
-		const id = this.user.id;
-		this.#save(this.#accounts().filter((a) => a.id !== id));
-		write(ls(), `pl-ws:${id}`, null);
-		this.signOut();
+	async deleteAccount() {
+		const r = await api('DELETE', '/api/account', {});
+		if (r.ok) {
+			this.user = null;
+			clearLocalData();
+		}
+		return r;
 	}
 
-	signOut() {
-		write(ls(), SESSION, null);
-		write(ss(), SESSION, null);
+	async signOut() {
+		await api('POST', '/api/auth/signout', {});
+		clearLocalData();
 		this.user = null;
 		this.pending = null;
+		this.devCode = null;
+	}
+
+	cancelPending() {
+		this.pending = null;
+		this.devCode = null;
 	}
 }
 

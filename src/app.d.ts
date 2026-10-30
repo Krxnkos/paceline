@@ -1,12 +1,21 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
-// for information about these interfaces
+import type { UserDoc } from '#lib/server/auth.ts';
+
 declare global {
+	// Worker bindings and vars, read with `import { env } from 'cloudflare:workers'`.
+	namespace Cloudflare {
+		interface Env {
+			DB: DurableObjectNamespace;
+		}
+	}
+
 	namespace App {
-		// interface Error {}
-		// interface Locals {}
-		// interface PageData {}
-		// interface PageState {}
-		// interface Platform {}
+		interface Error {
+			message: string;
+		}
+		interface Locals {
+			user: UserDoc | null;
+		}
 	}
 }
 

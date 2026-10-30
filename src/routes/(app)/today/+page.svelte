@@ -22,7 +22,16 @@
 	const s = $derived(workspace.settings);
 	const pattern = $derived(patternFor(s, today));
 	const agenda = $derived(
-		agendaFor(today, workspace.plan, workspace.tasks, workspace.meetings, s, clock.minute, today)
+		agendaFor(
+			today,
+			workspace.plan,
+			workspace.tasks,
+			workspace.meetings,
+			s,
+			clock.minute,
+			today,
+			workspace.awaiting
+		)
 	);
 	const capacity = $derived(dayCapacity(s, workspace.meetings, today));
 	const booked = $derived(bookedMin(workspace.plan, today));
@@ -48,7 +57,9 @@
 	);
 
 	// Lead block: the one running now, else the next one up.
-	const blocks = $derived(agenda.filter((a) => a.kind === 'block' && a.state !== 'past'));
+	const blocks = $derived(
+		agenda.filter((a) => a.kind === 'block' && !a.history && a.state !== 'past')
+	);
 	const lead = $derived(blocks.find((a) => a.state === 'now') ?? blocks[0] ?? null);
 	const nextItem = $derived(
 		agenda.find((a) => a.state === 'future' && a !== lead && a.kind !== 'lunch') ?? null
@@ -101,6 +112,27 @@
 				box: 'bg-surface border-surface text-muted font-medium',
 				tag: 'PROTECTED',
 				meta: 'LUNCH',
+				time: 'text-muted'
+			};
+		if (a.done)
+			return {
+				box: 'border-line text-muted font-medium line-through',
+				tag: '✓ DONE',
+				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN`,
+				time: 'text-muted'
+			};
+		if (a.confirm)
+			return {
+				box: 'border-amber text-ink font-semibold',
+				tag: 'DONE?',
+				meta: 'TIME UP · CONFIRM ON THE NOW CARD',
+				time: 'text-amber'
+			};
+		if (a.history)
+			return {
+				box: 'border-line text-faint',
+				tag: 'WORKED',
+				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN`,
 				time: 'text-muted'
 			};
 		if (a === lead && a.state === 'now')

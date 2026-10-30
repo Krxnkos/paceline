@@ -1,0 +1,22 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "paceline",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-10-29",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": { "binding": "ASSETS", "directory": ".svelte-kit/cloudflare" },
+	// Served only on the custom domain; Cloudflare creates the DNS record and certificate.
+	"routes": [{ "pattern": "paceline.krxnkos.xyz", "custom_domain": true }],
+	"workers_dev": false,
+	"preview_urls": false,
+	"observability": { "enabled": true },
+	"durable_objects": {
+		"bindings": [{ "name": "DB", "class_name": "MongoGateway", "script_name": "paceline-db" }]
+	},
+	"vars": {
+		"PUBLIC_ORIGIN": "https://paceline.krxnkos.xyz",
+		"EMAIL_FROM": "Paceline <no-reply@krxnkos.xyz>",
+		"PBKDF2_ITERATIONS": "60000"
+	}
+	// Secrets: PASSWORD_PEPPER, RESEND_API_KEY, SIGNUP_ALLOWLIST (npx wrangler secret put NAME)
+}

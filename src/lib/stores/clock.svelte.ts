@@ -15,6 +15,16 @@ class Clock {
 		return new Date(Date.now() + this.#offset);
 	}
 
+	get offset() {
+		return this.#offset;
+	}
+
+	/** Developer tools: view the app at another moment (this tab only). Null is real time. */
+	travel(to: Date | null) {
+		this.#offset = to ? to.getTime() - Date.now() : 0;
+		this.now = this.#read();
+	}
+
 	start() {
 		if (this.#timer || typeof window === 'undefined') return;
 		if (import.meta.env.DEV) {

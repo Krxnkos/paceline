@@ -96,19 +96,54 @@ src/
           projects projects/[id] goals insights settings onboarding
 ```
 
-## Deploy
+## Architecture (production)
 
-Push to GitHub, then import the repository in Vercel (or Cloudflare Pages). `adapter-auto` picks the right
-adapter, and every push to `main` ships. Add your domain in the host's dashboard and create the DNS records it
-shows.
+```
+browser ──https──▶ paceline (Worker, SvelteKit)      paceline.krxnkos.xyz, custom domain
+                     │ /api/* : auth, sessions, workspace sync
+                     ▼  Durable Object RPC (private, no public route)
+                   paceline-db (Worker + Durable Object) ──TLS──▶ MongoDB Atlas
+                     keeps one MongoDB connection warm
+```
 
-## Next step: hosted accounts and sync
+- **Accounts**: email + password (PBKDF2-SHA256 with a secret pepper), 6-digit email codes for new accounts and
+  new devices, reset links, 5-try lockout, rate limits, sign-up allowlist. Sessions are httpOnly `__Host-` cookies;
+  only a SHA-256 of the token is stored.
+- **Data**: one versioned document per person in the `workspaces` collection. The app keeps an offline copy and
+  syncs when the connection returns; if another device saved first, its copy wins.
+- **Email**: Resend, from `no-reply@krxnkos.xyz`.
 
-Accounts and plans are currently **local to each browser** (local mode). The screens already follow the
-hosted flow from the design's build map (L.08). To make accounts work across devices:
+## Deploy to paceline.krxnkos.xyz
 
-1. Create a Supabase project, run the schema from L.08 (one table per type with row-level security), and enable
-   the email and Google providers.
-2. Add `PUBLIC_SUPABASE_URL` and `PUBLIC_SUPABASE_ANON_KEY` to `.env` and to your host.
-3. Swap the internals of `src/lib/stores/auth.svelte.ts` and the `#persist`/`load` methods of
-   `workspace.svelte.ts` for `@supabase/ssr` calls. The public methods stay the same, so no screen changes.
+One-time setup (each secret command prompts for the value; nothing is stored in the repo):
+
+```bash
+npx wrangler login
+npm run deploy:db
+npx wrangler secret put MONGODB_URI --config workers/db/wrangler.jsonc
+npm run deploy
+openssl rand -base64 48 | npx wrangler secret put PASSWORD_PEPPER
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put SIGNUP_ALLOWLIST
+```
+
+After that, `npm run deploy` ships a new version and `npm run tail` streams live logs. In MongoDB Atlas, allow
+network access from `0.0.0.0/0` (Workers have no fixed IP) and use a database user with a long generated password,
+scoped to the `paceline` database.
+
+`PASSWORD_PEPPER` must never change once accounts exist: every password hash depends on it.
+
+## Plans and badges
+
+Every account shows one tier badge (Free, Pro or Ultimate) and, optionally, a Developer badge. There's no billing
+yet: set them on the account in MongoDB Atlas (_Browse Collections ▸ paceline ▸ users_), then reload.
+
+- `tier`: `"free"`, `"pro"` or `"ultimate"` (missing means Free). Limits live in `src/lib/tiers.ts`.
+- `developer`: `true` adds the Developer panel to Settings and `/api/debug`.
+
+Project and goal limits are enforced on the server. Theme, Timeline, forecast length and export gates are in the app.
+
+## Local development
+
+`npm run dev` needs nothing else: it uses an in-memory MongoDB and shows email codes on screen. To use a real
+database, copy `.dev.vars.example` to `.env` and fill in `MONGODB_URI`.

@@ -24,3 +24,7 @@ vite.config.ts.timestamp-*
 
 # JetBrains (shared run configs live in .run/)
 .idea/
+
+# Local Wrangler secrets
+.dev.vars*
+!.dev.vars.example

@@ -57,6 +57,7 @@
 			due
 		};
 		if (ui.goal.goal) workspace.updateGoal(ui.goal.goal.id, g);
+		else if (!workspace.canAdd('goals')) return;
 		else workspace.addGoal(g);
 		toast(ui.goal.goal ? 'Goal saved' : 'Goal added');
 		ui.goal = { open: false };

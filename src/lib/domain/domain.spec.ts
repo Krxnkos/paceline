@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, fmtDur, weekStart } from './dates.ts';
 import { parseCapture, parseDateWord, parseEstimate } from './parse.ts';
-import { buildPlan, dayCapacity } from './plan.ts';
+import { buildPlan, dayCapacity, remainingMin } from './plan.ts';
 import { forecast, mustDos, urgency } from './forecast.ts';
 import { defaultSettings, exampleWorkspace, newTask } from './seed.ts';
 import { projectStats } from './stats.ts';
@@ -158,5 +158,32 @@ describe('example workspace', () => {
 		const s = projectStats(ws.projects[0], ws.tasks, plan);
 		expect(s.pct).toBeGreaterThan(0);
 		expect(s.pct).toBeLessThan(1);
+	});
+});
+
+describe('blocks that happened', () => {
+	const settings = defaultSettings(TODAY);
+
+	it('keeps a lit block fixed and counts it towards the task', () => {
+		const t = newTask(1, TODAY, { id: 'a', estimateMin: 90 });
+		const active = { taskId: 'a', date: TODAY, start: 600, end: 660 };
+		const plan = buildPlan([t], [], settings, NOW, active);
+		expect(plan.placed.a!.blocks[0]).toMatchObject({ start: 600, end: 660 });
+		const total = plan.placed.a!.blocks.reduce((n, b) => n + b.end - b.start, 0);
+		expect(total).toBe(90);
+	});
+
+	it('does not schedule over finished blocks', () => {
+		const done = newTask(1, TODAY, {
+			status: 'done',
+			history: [{ date: TODAY, start: 660, end: 690 }]
+		});
+		const t = newTask(2, TODAY, { id: 'b', estimateMin: 120 });
+		for (const b of buildPlan([done, t], [], settings, NOW).byDate[TODAY])
+			expect(b.end <= 660 || b.start >= 690).toBe(true);
+	});
+
+	it('counts time from earlier blocks of a split task', () => {
+		expect(remainingMin(newTask(1, TODAY, { estimateMin: 120, creditMin: 90 }))).toBe(30);
 	});
 });

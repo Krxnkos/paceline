@@ -1,0 +1,17 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "paceline-db",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-29",
+	"compatibility_flags": ["nodejs_compat"],
+	// Never reachable from the internet: no routes, no workers.dev URL.
+	"workers_dev": false,
+	"preview_urls": false,
+	"observability": { "enabled": true },
+	"durable_objects": {
+		"bindings": [{ "name": "GATEWAY", "class_name": "MongoGateway" }]
+	},
+	// Workers Free supports SQLite-backed Durable Objects only.
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["MongoGateway"] }]
+	// Secret: MONGODB_URI (npx wrangler secret put MONGODB_URI --config workers/db/wrangler.jsonc)
+}

@@ -99,8 +99,9 @@
 				icon: 'sun',
 				group: 'Actions',
 				run: () => {
-					const i = THEMES.findIndex((t) => t.id === theme.resolved);
-					theme.set(THEMES[(i + 1) % THEMES.length].id);
+					const list = THEMES.filter((t) => workspace.tier.themes === 'all' || t.family === 'Volt');
+					const i = list.findIndex((t) => t.id === theme.resolved);
+					theme.set(list[(i + 1) % list.length].id);
 				}
 			},
 			{

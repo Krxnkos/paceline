@@ -1,13 +1,26 @@
-import type { Goal, Meeting, Project, Settings, Status, Task, Workspace } from '../types.ts';
+import type {
+	BlockSpan,
+	Goal,
+	Meeting,
+	Project,
+	Settings,
+	Status,
+	Task,
+	Workspace
+} from '../types.ts';
 import { addDays, addMonths, fmtShort } from '../domain/dates.ts';
 import { parseCapture, type Parsed } from '../domain/parse.ts';
-import { buildPlan } from '../domain/plan.ts';
+import { buildPlan, remainingMin } from '../domain/plan.ts';
 import { alerts, code } from '../domain/forecast.ts';
 import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.ts';
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
+import { api, auth } from './auth.svelte.ts';
+import { tierInfo } from '../tiers.ts';
 
-const KEY = (userId: string) => `pl-ws:${userId}`;
+/** Offline cache only; MongoDB is the source of truth. */
+const CACHE = (userId: string) => `pl-ws-cache:${userId}`;
+const SAVE_DELAY = 600;
 const UNDO_LIMIT = 30;
 
 function nextDue(due: string, repeat: Task['repeat']): string {
@@ -37,51 +50,180 @@ class WorkspaceStore {
 	meetings = $derived(this.data?.meetings ?? []);
 	goals = $derived(this.data?.goals ?? []);
 	settings = $derived(this.data?.settings as Settings);
+	// A task waiting on "Did you complete this?" is paused until it's answered.
 	plan = $derived(
 		buildPlan(
-			this.tasks,
+			this.tasks.filter((t) => t.id !== this.data?.awaiting?.taskId),
 			this.meetings,
 			this.data?.settings ?? blankWorkspace(clock.today).settings,
-			clock.now
+			clock.now,
+			this.data?.active ?? null
 		)
 	);
 	alerts = $derived(
 		this.data ? alerts(this.tasks, this.projects, this.plan, this.data.settings, clock.today) : []
 	);
+	tier = $derived(tierInfo(auth.user?.tier));
+	active = $derived(this.data?.active ?? null);
+	awaiting = $derived(this.data?.awaiting ?? null);
 	inboxCount = $derived(this.tasks.filter((t) => t.inbox && t.status !== 'done').length);
 
-	load(userId: string) {
-		if (this.userId === userId && this.data) return;
+	status = $state<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle');
+	#version = 0;
+	#timer: ReturnType<typeof setTimeout> | null = null;
+	#inflight = false;
+	#dirty = false;
+
+	/** Load this person's plan from the server, showing the cached copy meanwhile. */
+	async load(userId: string) {
+		if (this.userId === userId && this.status !== 'idle' && this.status !== 'error') return;
 		this.userId = userId;
+		this.status = 'loading';
 		this.#undo = [];
 		this.canUndo = false;
-		try {
-			const raw = localStorage.getItem(KEY(userId));
-			this.data = raw ? (JSON.parse(raw) as Workspace) : null;
-		} catch {
-			this.data = null;
+		const cached = this.#readCache(userId);
+		if (cached) {
+			this.data = cached.data;
+			this.#version = cached.version;
+			this.#dirty = cached.dirty;
 		}
+		const r = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+		if (this.userId !== userId) return;
+		if (!r.ok) {
+			// Offline: carry on from the cache and sync when the connection returns.
+			this.saving = 'offline';
+			this.status = this.data ? 'ready' : 'error';
+			return;
+		}
+		if (cached?.dirty && cached.version === r.data!.version) {
+			// Unsent local edits made offline on top of the latest server copy.
+			this.status = 'ready';
+			this.#queue(0);
+			return;
+		}
+		this.data = r.data!.data;
+		this.#version = r.data!.version;
+		this.#dirty = false;
+		this.#writeCache();
+		this.saving = 'synced';
+		this.status = this.data ? 'ready' : 'empty';
 	}
 
 	unload() {
+		if (this.#timer) clearTimeout(this.#timer);
 		this.userId = null;
 		this.data = null;
+		this.status = 'idle';
+		this.#version = 0;
+		this.#dirty = false;
 	}
 
 	start(kind: 'example' | 'blank') {
 		this.data = kind === 'example' ? exampleWorkspace(clock.today) : blankWorkspace(clock.today);
+		this.status = 'ready';
 		this.#persist();
+	}
+
+	#readCache(userId: string): { data: Workspace; version: number; dirty: boolean } | null {
+		try {
+			const raw = localStorage.getItem(CACHE(userId));
+			return raw ? JSON.parse(raw) : null;
+		} catch {
+			return null;
+		}
+	}
+
+	#writeCache() {
+		if (!this.userId || !this.data) return;
+		try {
+			localStorage.setItem(
+				CACHE(this.userId),
+				JSON.stringify({
+					data: $state.snapshot(this.data),
+					version: this.#version,
+					dirty: this.#dirty
+				})
+			);
+		} catch {
+			/* storage full or blocked: the server copy still saves */
+		}
 	}
 
 	#persist() {
 		if (!this.userId || !this.data) return;
+		this.#dirty = true;
 		this.saving = 'saving';
-		try {
-			localStorage.setItem(KEY(this.userId), JSON.stringify($state.snapshot(this.data)));
-			this.saving = 'synced';
-		} catch {
-			this.saving = 'offline';
+		this.#writeCache();
+		this.#queue(SAVE_DELAY);
+	}
+
+	#queue(delay: number) {
+		if (this.#timer) clearTimeout(this.#timer);
+		this.#timer = setTimeout(() => this.#flush(), delay);
+	}
+
+	/** Send the latest copy. Edits made while a save is in flight go out right after it. */
+	async #flush() {
+		if (this.#inflight || !this.#dirty || !this.data || !this.userId) return;
+		this.#inflight = true;
+		this.#dirty = false;
+		const userId = this.userId;
+		const r = await api<{ version?: number; conflict?: boolean; data?: Workspace | null }>(
+			'PUT',
+			'/api/workspace',
+			{
+				data: $state.snapshot(this.data),
+				version: this.#version
+			}
+		);
+		this.#inflight = false;
+		if (this.userId !== userId) return;
+		if (r.ok && r.data?.version) {
+			this.#version = r.data.version;
+			this.saving = this.#dirty ? 'saving' : 'synced';
+			this.#writeCache();
+			if (this.#dirty) this.#queue(0);
+			return;
 		}
+		if (r.status === 409 && r.data?.conflict) {
+			// Another device saved first. Take its copy rather than overwrite it.
+			this.data = r.data.data ?? this.data;
+			this.#version = r.data.version ?? this.#version;
+			this.#dirty = false;
+			this.#undo = [];
+			this.canUndo = false;
+			this.saving = 'synced';
+			this.#writeCache();
+			toast('Updated from another device · your last change there won', { tone: 'err' });
+			return;
+		}
+		if (r.status === 403) {
+			// Over the plan's limit: put back the last saved copy.
+			const fresh = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+			if (fresh.ok && fresh.data?.data) {
+				this.data = fresh.data.data;
+				this.#version = fresh.data.version;
+				this.#writeCache();
+			}
+			this.saving = 'synced';
+			toast(r.error ?? 'That is over your plan’s limit.', { tone: 'err' });
+			return;
+		}
+		if (r.status === 401) {
+			this.saving = 'offline';
+			toast('Your session ended. Sign in again to save.', { tone: 'err' });
+			return;
+		}
+		// Offline or a server hiccup: keep the edit and retry.
+		this.#dirty = true;
+		this.saving = 'offline';
+		this.#writeCache();
+		this.#queue(r.status === 0 ? 10_000 : 5_000);
+	}
+
+	/** Push unsent changes now (e.g. when the connection comes back). */
+	retry() {
+		if (this.#dirty) this.#queue(0);
 	}
 
 	#checkpoint() {
@@ -148,7 +290,7 @@ class WorkspaceStore {
 		}
 		return this.#change((ws) => {
 			let projectId = p.projectId ?? opts.defaults?.projectId ?? null;
-			if (p.newProject) {
+			if (p.newProject && this.canAdd('projects')) {
 				const proj: Project = {
 					id: uid(),
 					code: ws.nextProjectCode++,
@@ -218,13 +360,16 @@ class WorkspaceStore {
 				const t = ws.tasks.find((x) => x.id === id)!;
 				t.status = 'next';
 				t.doneAt = null;
+				t.history = (t.history ?? []).filter((h) => h.date < clock.today || h.end <= clock.minute);
 			});
 			toast(`Reopened ${code(t0.code)}`, { action: 'Undo', onAction: () => this.undo() });
 			return;
 		}
+		const planned = (this.plan.placed[id]?.blocks ?? []).map((b) => ({ ...b }));
 		let msg = `Completed ${code(t0.code)}`;
 		this.#change((ws) => {
 			const t = ws.tasks.find((x) => x.id === id)!;
+			this.#stamp(ws, t, planned);
 			t.status = 'done';
 			t.doneAt = clock.today;
 			t.inbox = false;
@@ -237,6 +382,8 @@ class WorkspaceStore {
 					status: 'next',
 					doneAt: null,
 					loggedMin: 0,
+					creditMin: 0,
+					history: [],
 					log: [],
 					due,
 					subtasks: t.subtasks.map((s) => ({ ...s, id: uid(), done: false }))
@@ -246,6 +393,121 @@ class WorkspaceStore {
 			}
 		});
 		toast(msg, { action: 'Undo', onAction: () => this.undo() });
+	}
+
+	/** Keep a finished task's blocks on the calendar. */
+	#stamp(ws: Workspace, t: Task, planned: BlockSpan[]) {
+		const today = clock.today;
+		const history = t.history ?? [];
+		if (ws.active?.taskId === t.id) {
+			const a = ws.active;
+			const end = Math.min(a.end, Math.max(clock.minute, a.start + 5));
+			t.history = [...history, { date: a.date, start: a.start, end }];
+			ws.active = null;
+		} else if (!history.some((h) => h.date === today)) {
+			const blocks = planned.filter((b) => b.date === today);
+			t.history = [
+				...history,
+				...blocks.map((b) => ({ date: b.date, start: b.start, end: b.end }))
+			];
+		}
+		if (ws.awaiting?.taskId === t.id) ws.awaiting = null;
+	}
+
+	/**
+	 * Runs each minute. Fixes the block in progress so its end can't drift; when it
+	 * ends unfinished, queues "Did you complete this?" (or, if the task continues in
+	 * a later block, counts the time and moves on).
+	 */
+	tick() {
+		const ws = this.data;
+		if (!ws || this.status !== 'ready') return;
+		const { today, minute } = clock;
+		let changed = false;
+		const a = ws.active;
+		if (a) {
+			const t = ws.tasks.find((x) => x.id === a.taskId);
+			if (!t || t.status === 'done') {
+				ws.active = null;
+				changed = true;
+			} else if (a.date < today || a.end <= minute) {
+				const len = a.end - a.start;
+				t.history = [...(t.history ?? []), { date: a.date, start: a.start, end: a.end }];
+				ws.active = null;
+				if (remainingMin(t) > len) t.creditMin = Math.max(t.loggedMin, t.creditMin ?? 0) + len;
+				else ws.awaiting = a;
+				changed = true;
+			}
+		}
+		if (!ws.active) {
+			const b = (this.plan.byDate[today] ?? []).find((x) => x.start <= minute && x.end > minute);
+			if (b) {
+				ws.active = { taskId: b.taskId, date: b.date, start: b.start, end: b.end };
+				changed = true;
+			}
+		}
+		if (changed) this.#persist();
+	}
+
+	/** "Did you complete this?" → Yes. */
+	confirmDone() {
+		const a = this.data?.awaiting;
+		if (a) this.complete(a.taskId);
+	}
+
+	/** "Did you complete this?" → Need more time: relight it from now. */
+	moreTime(minutes: number) {
+		const a = this.data?.awaiting;
+		if (!a) return;
+		this.#change((ws) => {
+			ws.awaiting = null;
+			ws.active = {
+				taskId: a.taskId,
+				date: clock.today,
+				start: clock.minute,
+				end: Math.min(1439, clock.minute + minutes)
+			};
+		});
+		toast(`Block extended by ${minutes} min`);
+	}
+
+	/** "Did you complete this?" → Not yet: hand it back to the planner. */
+	replanAwaiting() {
+		const a = this.data?.awaiting;
+		if (!a) return;
+		this.#change((ws) => {
+			ws.awaiting = null;
+			const t = ws.tasks.find((x) => x.id === a.taskId);
+			if (t) t.creditMin = 0;
+		});
+		toast('Back in the plan · schedule updated');
+	}
+
+	get version() {
+		return this.#version;
+	}
+
+	/** Developer tools: end the lit block now and raise its completion prompt. */
+	endActiveNow() {
+		const ws = this.data;
+		const a = ws?.active;
+		const t = ws?.tasks.find((x) => x.id === a?.taskId);
+		if (!ws || !a || !t) return;
+		const ended = { ...$state.snapshot(a), end: Math.max(a.start + 1, clock.minute) };
+		t.history = [...(t.history ?? []), { date: ended.date, start: ended.start, end: ended.end }];
+		ws.active = null;
+		ws.awaiting = ended;
+		this.#persist();
+	}
+
+	/** Whether the plan allows another project or goal. */
+	canAdd(kind: 'projects' | 'goals') {
+		const left = this[kind].length < this.tier[kind];
+		if (!left)
+			toast(`${this.tier.label} includes ${this.tier[kind]} ${kind}. Upgrade for more.`, {
+				tone: 'err'
+			});
+		return left;
 	}
 
 	deleteTask(id: string) {
@@ -268,10 +530,16 @@ class WorkspaceStore {
 
 	updateMany(ids: string[], patch: Partial<Task>) {
 		const set = new Set(ids);
+		const plans = new Map(
+			ids.map((id) => [id, (this.plan.placed[id]?.blocks ?? []).map((b) => ({ ...b }))])
+		);
 		this.#change((ws) => {
 			for (const t of ws.tasks)
-				if (set.has(t.id))
+				if (set.has(t.id)) {
+					if (patch.status === 'done' && t.status !== 'done')
+						this.#stamp(ws, t, plans.get(t.id) ?? []);
 					Object.assign(t, patch, patch.status === 'done' ? { doneAt: clock.today } : {});
+				}
 		});
 	}
 

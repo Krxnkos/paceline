@@ -4,6 +4,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import Mark from '../ui/Mark.svelte';
 	import Avatar from '../ui/Avatar.svelte';
+	import PlanBadge from '../ui/PlanBadge.svelte';
 	import { NAV, SETTINGS_NAV, type NavEntry } from './nav.ts';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import { auth, shortName } from '../stores/auth.svelte.ts';
@@ -26,22 +27,23 @@
 		page.url.pathname === n.href || page.url.pathname.startsWith(n.href + '/');
 	const syncLabel = $derived(
 		workspace.saving === 'offline'
-			? 'Offline · saved locally'
+			? 'Offline · will sync'
 			: workspace.saving === 'saving'
 				? 'Saving…'
-				: 'Saved · private'
+				: 'Synced · private'
 	);
 
 	function cycleTheme() {
-		const i = THEMES.findIndex((t) => t.id === theme.resolved);
-		const next = THEMES[(i + 1) % THEMES.length].id;
+		const list =
+			workspace.tier.themes === 'all' ? THEMES.map((t) => t.id) : (['carbon', 'chalk'] as const);
+		const next = list[(list.findIndex((t) => t === theme.resolved) + 1) % list.length];
 		theme.set(next);
 		workspace.updateSettings({ theme: next });
 	}
 
 	async function signOut() {
 		menuOpen = false;
-		auth.signOut();
+		await auth.signOut();
 		workspace.unload();
 		await goto('/login');
 	}
@@ -102,6 +104,10 @@
 					<span class="font-mono text-[10px] tracking-[0.08em] text-muted uppercase"
 						>{syncLabel}</span
 					>
+					<span class="mt-1 flex flex-wrap gap-1">
+						<PlanBadge kind={auth.user?.tier ?? 'free'} />
+						{#if auth.user?.developer}<PlanBadge kind="developer" />{/if}
+					</span>
 				</span>
 				<span class="ml-auto text-muted"><Icon name="chevronDown" size={14} /></span>
 			</button>

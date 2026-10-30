@@ -1,4 +1,13 @@
-import type { Block, ISODate, Meeting, Plan, Placement, Settings, Task } from '../types.ts';
+import type {
+	ActiveBlock,
+	Block,
+	ISODate,
+	Meeting,
+	Plan,
+	Placement,
+	Settings,
+	Task
+} from '../types.ts';
 import { addDays, dayWorkMinutes, diffDays, hmToMin, iso, nowMin, patternFor } from './dates.ts';
 
 export const HORIZON_DAYS = 120;
@@ -19,7 +28,7 @@ interface DayState {
 export function remainingMin(t: Task): number {
 	if (t.status === 'done') return 0;
 	const est = t.estimateMin > 0 ? t.estimateMin : 30;
-	return Math.max(MIN_CHUNK, est - t.loggedMin);
+	return Math.max(MIN_CHUNK, est - Math.max(t.loggedMin, t.creditMin ?? 0));
 }
 
 /** Higher runs first. Shared by the planner, must-dos and the table's default sort. */
@@ -84,8 +93,17 @@ export function dayWorking(settings: Settings, date: ISODate): number {
  * highest score first, after its dependencies, never before its start date,
  * keeping the buffer free. Admin and Comms prefer afternoons.
  */
-export function buildPlan(tasks: Task[], meetings: Meeting[], settings: Settings, now: Date): Plan {
+export function buildPlan(
+	tasks: Task[],
+	meetings: Meeting[],
+	settings: Settings,
+	now: Date,
+	active: ActiveBlock | null = null
+): Plan {
 	const today = iso(now);
+	const live = active && active.date === today && active.end > nowMin(now) ? active : null;
+	const taken = tasks.flatMap((t) => t.history ?? []);
+	if (live) taken.push(live);
 	// Anchor today's plan to the current quarter-hour, so the block in progress
 	// stays put (and shows as NOW) instead of sliding forward every minute.
 	const nm = Math.floor(nowMin(now) / 15) * 15;
@@ -98,6 +116,7 @@ export function buildPlan(tasks: Task[], meetings: Meeting[], settings: Settings
 		const fullFree = total(full);
 		let free = full;
 		if (date === today) free = subtract(full, 0, nm);
+		for (const h of taken) if (h.date === date) free = subtract(free, h.start, h.end);
 		const remain = total(free);
 		const budget = fullFree ? Math.round(remain * (1 - settings.bufferPct / 100)) : 0;
 		d = { free, budget };
@@ -147,6 +166,10 @@ export function buildPlan(tasks: Task[], meetings: Meeting[], settings: Settings
 
 		let r = remainingMin(t);
 		const mine: Block[] = [];
+		if (live?.taskId === t.id) {
+			mine.push({ taskId: t.id, date: live.date, start: live.start, end: live.end });
+			r = Math.max(0, r - (live.end - live.start));
+		}
 		const afternoonFirst = t.category === 'Admin' || t.category === 'Comms';
 		for (let i = Math.max(0, diffDays(earliestDate, today)); i < HORIZON_DAYS && r > 0; i++) {
 			const date = addDays(today, i);

@@ -68,7 +68,7 @@
 			return;
 		}
 		let projectId = draft.projectId ?? null;
-		if (parsed.newProject && !touched.projectId)
+		if (parsed.newProject && !touched.projectId && workspace.canAdd('projects'))
 			projectId = workspace.addProject({ name: parsed.newProject, description: '', due: null }).id;
 		const t = workspace.addTask({
 			...draft,

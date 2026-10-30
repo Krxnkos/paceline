@@ -56,13 +56,16 @@
 			workspace.meetings,
 			s,
 			clock.minute,
-			clock.today
+			clock.today,
+			workspace.awaiting
 		).filter((a) => a.end > range[0] && a.start < range[1]);
 	}
 
 	function style(a: AgendaItem, d: ISODate): string {
 		if (a.kind === 'meeting') return 'bg-ice text-signal-ink font-bold';
 		if (a.kind === 'lunch') return 'bg-surface text-muted';
+		if (a.done) return 'border border-line text-muted line-through';
+		if (a.confirm) return 'border border-amber text-ink font-semibold';
 		if (d === clock.today && a.state === 'now') return 'bg-accent text-accent-ink font-extrabold';
 		if (a.state === 'past') return 'border border-line text-faint';
 		if (a.pinned) return 'border border-ink text-ink font-semibold';
@@ -72,6 +75,9 @@
 	function tag(a: AgendaItem, d: ISODate): string {
 		if (a.kind === 'meeting') return `${a.start ? minToHM(a.start) : ''}–${minToHM(a.end)}`;
 		if (a.kind === 'lunch') return '';
+		if (a.done) return `✓ DONE · ${minToHM(a.start)}–${minToHM(a.end)}`;
+		if (a.confirm) return 'DID YOU COMPLETE THIS?';
+		if (a.history) return `WORKED · ${minToHM(a.start)}–${minToHM(a.end)}`;
 		if (d === clock.today && a.state === 'now') return `NOW · ${a.end - clock.minute} MIN LEFT`;
 		return `${a.pinned ? 'PINNED' : 'AUTO'} · ${a.task!.category.toUpperCase()} · ${minToHM(a.start)}–${minToHM(a.end)}`;
 	}
