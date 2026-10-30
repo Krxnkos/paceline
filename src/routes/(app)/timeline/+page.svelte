@@ -3,6 +3,7 @@
 	import Segmented from '#lib/ui/Segmented.svelte';
 	import Badge from '#lib/ui/Badge.svelte';
 	import Icon from '#lib/ui/Icon.svelte';
+	import EmptyState from '#lib/ui/EmptyState.svelte';
 	import { workspace, openTask } from '#lib/stores/workspace.svelte.ts';
 	import { filters } from '#lib/stores/filters.svelte.ts';
 	import { clock } from '#lib/stores/clock.svelte.ts';
@@ -177,219 +178,227 @@
 
 <svelte:head><title>Paceline · Timeline</title></svelte:head>
 
-<div class="flex flex-col px-4 pt-2 pb-12 nav:px-8">
-	<FilterBar
-		count="{groups.length} projects · {groups.reduce((n, g) => n + g.tasks.length, 0)} tasks"
-	>
-		<Segmented
-			label="Zoom"
-			value={zoom}
-			onchange={(v) => (zoom = v)}
-			options={[
-				{ id: 'days', label: 'Days' },
-				{ id: 'weeks', label: 'Weeks' },
-				{ id: 'months', label: 'Months' }
-			]}
-		/>
-	</FilterBar>
+{#if !workspace.tier.timeline}
+	<EmptyState
+		title="Timeline is a Pro feature"
+		body="See every project across time, with dependencies and late overruns. Included in Pro and Ultimate."
+	/>
+{:else}
+	<div class="flex flex-col px-4 pt-2 pb-12 nav:px-8">
+		<FilterBar
+			count="{groups.length} projects · {groups.reduce((n, g) => n + g.tasks.length, 0)} tasks"
+		>
+			<Segmented
+				label="Zoom"
+				value={zoom}
+				onchange={(v) => (zoom = v)}
+				options={[
+					{ id: 'days', label: 'Days' },
+					{ id: 'weeks', label: 'Weeks' },
+					{ id: 'months', label: 'Months' }
+				]}
+			/>
+		</FilterBar>
 
-	<div
-		bind:this={scroller}
-		class="mt-4 max-h-[calc(100dvh-190px)] overflow-auto border border-line"
-	>
 		<div
-			class="relative grid"
-			style="grid-template-columns: var(--label-w) {width}px; --label-w: min(320px, 42vw)"
+			bind:this={scroller}
+			class="mt-4 max-h-[calc(100dvh-190px)] overflow-auto border border-line"
 		>
-			<!-- header -->
 			<div
-				class="sticky top-0 left-0 z-20 flex h-11 items-end border-r border-b border-line bg-canvas px-3 pb-2"
+				class="relative grid"
+				style="grid-template-columns: var(--label-w) {width}px; --label-w: min(320px, 42vw)"
 			>
-				<span class="eyebrow"
-					>{MONTH_SHORT[parseISO(clock.today).getMonth()]}
-					{parseISO(clock.today).getFullYear()}</span
-				>
-			</div>
-			<div class="sticky top-0 z-10 h-11 border-b border-line bg-canvas">
-				{#each scale as s (s.d)}
-					<span
-						class="absolute bottom-2 font-mono text-[10px] whitespace-nowrap {s.d === clock.today
-							? 'text-accent-text'
-							: 'text-muted'}"
-						style="left: {x(s.d) + (zoom === 'days' ? 4 : 3)}px">{s.label}</span
-					>
-				{/each}
-			</div>
-
-			<!-- labels -->
-			<div class="sticky left-0 z-10 border-r border-line bg-canvas">
-				{#each layout.rows as r (r.kind + (r.t?.id ?? r.g.id))}
-					{#if r.kind === 'group'}
-						<button
-							type="button"
-							onclick={() => toggleGroup(r.g.id)}
-							aria-expanded={!collapsed[r.g.id]}
-							class="flex w-full items-center gap-2.5 border-b border-line bg-panel px-3 text-left"
-							style="height: {GROUP}px"
-						>
-							<span class="text-muted transition-transform {collapsed[r.g.id] ? '-rotate-90' : ''}"
-								><Icon name="chevronDown" size={14} /></span
-							>
-							<span class="font-mono text-[10.5px] text-faint">{r.g.code}</span>
-							<span class="truncate text-[13.5px] font-bold">{r.g.name}</span>
-							{#if r.g.id !== 'none'}<span class="ml-auto font-mono text-[11px] text-muted"
-									>{Math.round(r.g.pct * 100)}%</span
-								>{/if}
-						</button>
-					{:else if r.t}
-						{@const f = forecast(r.t, workspace.plan, workspace.tasks)}
-						<button
-							type="button"
-							onclick={() => openTask(r.t!.id)}
-							class="flex w-full items-center gap-2.5 border-b border-line px-3 pl-9 text-left hover:bg-hover"
-							style="height: {ROW}px"
-						>
-							<span class="font-mono text-[10.5px] text-faint">{code(r.t.code)}</span>
-							<span
-								class="flex-1 truncate text-[13px] {r.t.status === 'done'
-									? 'text-muted line-through'
-									: ''}">{r.t.title}</span
-							>
-							{#if f && f.key !== 'ontime' && f.key !== 'ends'}<Badge
-									tone={f.tone}
-									label={f.label}
-								/>{/if}
-						</button>
-					{/if}
-				{/each}
-			</div>
-
-			<!-- chart -->
-			<div class="relative" style="height: {layout.height}px">
-				{#each days as d (d)}
-					{#if !isWorkday(workspace.settings, d)}
-						<div class="absolute inset-y-0 hatch" style="left: {x(d)}px; width: {PX}px"></div>
-					{/if}
-				{/each}
-				{#each layout.rows as r (r.kind + (r.t?.id ?? r.g.id))}
-					{#if r.kind === 'group'}
-						<div
-							class="absolute inset-x-0 border-b border-line bg-panel/70"
-							style="top: {r.y}px; height: {GROUP}px"
-						>
-							{#if r.g.tasks.length}
-								{@const bars = r.g.tasks.map(barFor).filter((b) => b.from)}
-								{#if bars.length}
-									{@const a = bars.map((b) => b.from!).sort()[0]}
-									{@const z = bars
-										.map((b) => b.to!)
-										.sort()
-										.at(-1)!}
-									<div
-										class="absolute top-[18px] h-2 bg-line-3"
-										style="left: {x(a)}px; width: {x(z) - x(a) + PX}px"
-									></div>
-								{/if}
-							{/if}
-							{#if r.g.due}
-								<div
-									class="absolute top-3 h-5 w-0.5 bg-ink-3"
-									style="left: {x(r.g.due) + PX - 1}px"
-									title="Target"
-								></div>
-							{/if}
-						</div>
-					{:else if r.t && r.bar}
-						<div
-							class="absolute inset-x-0 border-b border-line/60"
-							style="top: {r.y}px; height: {ROW}px"
-						>
-							{#if r.bar.kind === 'milestone' && r.bar.from}
-								<button
-									type="button"
-									aria-label="{r.t.title} · due"
-									onclick={() => openTask(r.t!.id)}
-									class="absolute top-[13px] size-[11px] rotate-45 bg-ink-3"
-									style="left: {x(r.bar.from) + PX / 2 - 5}px"
-								></button>
-							{:else if r.bar.from && r.bar.to}
-								{@const late = r.bar.kind === 'late' && r.t.due && r.bar.to > r.t.due}
-								<button
-									type="button"
-									aria-label={r.t.title}
-									onclick={() => openTask(r.t!.id)}
-									class="absolute top-2.5 h-[18px] {barCls[r.bar.kind]}"
-									style="left: {x(r.bar.from) + 1}px; width: {Math.max(
-										PX - 2,
-										x(r.bar.to) - x(r.bar.from) + PX - 2
-									)}px"
-								></button>
-								{#if late && r.t.due}
-									<div
-										class="pointer-events-none absolute top-2.5 h-[18px] border-y border-flare bg-flare/20"
-										style="left: {x(r.t.due) + PX}px; width: {x(r.bar.to) - x(r.t.due)}px"
-									></div>
-								{/if}
-							{/if}
-							{#if r.t.due && r.t.status !== 'done'}
-								<div
-									class="absolute top-3 h-3.5 w-0.5 bg-ink"
-									style="left: {x(r.t.due) + PX - 1}px"
-									title="Due"
-								></div>
-							{/if}
-						</div>
-					{/if}
-				{/each}
-
-				<svg
-					class="pointer-events-none absolute inset-0"
-					{width}
-					height={layout.height}
-					aria-hidden="true"
-				>
-					{#each arrows as a, i (i)}
-						<path
-							d={a.d}
-							fill="none"
-							stroke={a.clash ? 'var(--flare)' : 'var(--line-3)'}
-							stroke-width="1.5"
-						></path>
-					{/each}
-				</svg>
-
+				<!-- header -->
 				<div
-					class="pointer-events-none absolute inset-y-0 w-0.5 bg-accent"
-					style="left: {x(clock.today) + (clock.minute / 1440) * PX}px"
-				></div>
+					class="sticky top-0 left-0 z-20 flex h-11 items-end border-r border-b border-line bg-canvas px-3 pb-2"
+				>
+					<span class="eyebrow"
+						>{MONTH_SHORT[parseISO(clock.today).getMonth()]}
+						{parseISO(clock.today).getFullYear()}</span
+					>
+				</div>
+				<div class="sticky top-0 z-10 h-11 border-b border-line bg-canvas">
+					{#each scale as s (s.d)}
+						<span
+							class="absolute bottom-2 font-mono text-[10px] whitespace-nowrap {s.d === clock.today
+								? 'text-accent-text'
+								: 'text-muted'}"
+							style="left: {x(s.d) + (zoom === 'days' ? 4 : 3)}px">{s.label}</span
+						>
+					{/each}
+				</div>
+
+				<!-- labels -->
+				<div class="sticky left-0 z-10 border-r border-line bg-canvas">
+					{#each layout.rows as r (r.kind + (r.t?.id ?? r.g.id))}
+						{#if r.kind === 'group'}
+							<button
+								type="button"
+								onclick={() => toggleGroup(r.g.id)}
+								aria-expanded={!collapsed[r.g.id]}
+								class="flex w-full items-center gap-2.5 border-b border-line bg-panel px-3 text-left"
+								style="height: {GROUP}px"
+							>
+								<span
+									class="text-muted transition-transform {collapsed[r.g.id] ? '-rotate-90' : ''}"
+									><Icon name="chevronDown" size={14} /></span
+								>
+								<span class="font-mono text-[10.5px] text-faint">{r.g.code}</span>
+								<span class="truncate text-[13.5px] font-bold">{r.g.name}</span>
+								{#if r.g.id !== 'none'}<span class="ml-auto font-mono text-[11px] text-muted"
+										>{Math.round(r.g.pct * 100)}%</span
+									>{/if}
+							</button>
+						{:else if r.t}
+							{@const f = forecast(r.t, workspace.plan, workspace.tasks)}
+							<button
+								type="button"
+								onclick={() => openTask(r.t!.id)}
+								class="flex w-full items-center gap-2.5 border-b border-line px-3 pl-9 text-left hover:bg-hover"
+								style="height: {ROW}px"
+							>
+								<span class="font-mono text-[10.5px] text-faint">{code(r.t.code)}</span>
+								<span
+									class="flex-1 truncate text-[13px] {r.t.status === 'done'
+										? 'text-muted line-through'
+										: ''}">{r.t.title}</span
+								>
+								{#if f && f.key !== 'ontime' && f.key !== 'ends'}<Badge
+										tone={f.tone}
+										label={f.label}
+									/>{/if}
+							</button>
+						{/if}
+					{/each}
+				</div>
+
+				<!-- chart -->
+				<div class="relative" style="height: {layout.height}px">
+					{#each days as d (d)}
+						{#if !isWorkday(workspace.settings, d)}
+							<div class="absolute inset-y-0 hatch" style="left: {x(d)}px; width: {PX}px"></div>
+						{/if}
+					{/each}
+					{#each layout.rows as r (r.kind + (r.t?.id ?? r.g.id))}
+						{#if r.kind === 'group'}
+							<div
+								class="absolute inset-x-0 border-b border-line bg-panel/70"
+								style="top: {r.y}px; height: {GROUP}px"
+							>
+								{#if r.g.tasks.length}
+									{@const bars = r.g.tasks.map(barFor).filter((b) => b.from)}
+									{#if bars.length}
+										{@const a = bars.map((b) => b.from!).sort()[0]}
+										{@const z = bars
+											.map((b) => b.to!)
+											.sort()
+											.at(-1)!}
+										<div
+											class="absolute top-[18px] h-2 bg-line-3"
+											style="left: {x(a)}px; width: {x(z) - x(a) + PX}px"
+										></div>
+									{/if}
+								{/if}
+								{#if r.g.due}
+									<div
+										class="absolute top-3 h-5 w-0.5 bg-ink-3"
+										style="left: {x(r.g.due) + PX - 1}px"
+										title="Target"
+									></div>
+								{/if}
+							</div>
+						{:else if r.t && r.bar}
+							<div
+								class="absolute inset-x-0 border-b border-line/60"
+								style="top: {r.y}px; height: {ROW}px"
+							>
+								{#if r.bar.kind === 'milestone' && r.bar.from}
+									<button
+										type="button"
+										aria-label="{r.t.title} · due"
+										onclick={() => openTask(r.t!.id)}
+										class="absolute top-[13px] size-[11px] rotate-45 bg-ink-3"
+										style="left: {x(r.bar.from) + PX / 2 - 5}px"
+									></button>
+								{:else if r.bar.from && r.bar.to}
+									{@const late = r.bar.kind === 'late' && r.t.due && r.bar.to > r.t.due}
+									<button
+										type="button"
+										aria-label={r.t.title}
+										onclick={() => openTask(r.t!.id)}
+										class="absolute top-2.5 h-[18px] {barCls[r.bar.kind]}"
+										style="left: {x(r.bar.from) + 1}px; width: {Math.max(
+											PX - 2,
+											x(r.bar.to) - x(r.bar.from) + PX - 2
+										)}px"
+									></button>
+									{#if late && r.t.due}
+										<div
+											class="pointer-events-none absolute top-2.5 h-[18px] border-y border-flare bg-flare/20"
+											style="left: {x(r.t.due) + PX}px; width: {x(r.bar.to) - x(r.t.due)}px"
+										></div>
+									{/if}
+								{/if}
+								{#if r.t.due && r.t.status !== 'done'}
+									<div
+										class="absolute top-3 h-3.5 w-0.5 bg-ink"
+										style="left: {x(r.t.due) + PX - 1}px"
+										title="Due"
+									></div>
+								{/if}
+							</div>
+						{/if}
+					{/each}
+
+					<svg
+						class="pointer-events-none absolute inset-0"
+						{width}
+						height={layout.height}
+						aria-hidden="true"
+					>
+						{#each arrows as a, i (i)}
+							<path
+								d={a.d}
+								fill="none"
+								stroke={a.clash ? 'var(--flare)' : 'var(--line-3)'}
+								stroke-width="1.5"
+							></path>
+						{/each}
+					</svg>
+
+					<div
+						class="pointer-events-none absolute inset-y-0 w-0.5 bg-accent"
+						style="left: {x(clock.today) + (clock.minute / 1440) * PX}px"
+					></div>
+				</div>
 			</div>
+			{#if !groups.length}
+				<p class="m-0 py-12 text-center text-sm text-muted">
+					Nothing to draw yet. Plan a task with a project and it appears here.
+				</p>
+			{/if}
 		</div>
-		{#if !groups.length}
-			<p class="m-0 py-12 text-center text-sm text-muted">
-				Nothing to draw yet. Plan a task with a project and it appears here.
-			</p>
-		{/if}
+		<div
+			class="mt-3 flex flex-wrap gap-4 font-mono text-[10.5px] tracking-[0.08em] text-muted uppercase"
+		>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-5 border border-line-3 bg-raised"></span>Scheduled</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-5 bg-accent"></span>Lead</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-5 border-y border-flare bg-flare/20"></span>Late overrun</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-5 border border-dashed border-line-3"></span>Done</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block size-2 rotate-45 bg-ink-3"></span>Due only</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-3 w-0.5 bg-ink"></span>Due date</span
+			>
+		</div>
 	</div>
-	<div
-		class="mt-3 flex flex-wrap gap-4 font-mono text-[10.5px] tracking-[0.08em] text-muted uppercase"
-	>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-5 border border-line-3 bg-raised"></span>Scheduled</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-5 bg-accent"></span>Lead</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-5 border-y border-flare bg-flare/20"></span>Late overrun</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-5 border border-dashed border-line-3"></span>Done</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block size-2 rotate-45 bg-ink-3"></span>Due only</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-3 w-0.5 bg-ink"></span>Due date</span
-		>
-	</div>
-</div>
+{/if}

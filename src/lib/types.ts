@@ -41,6 +41,21 @@ export interface Task {
 	log: LogEntry[];
 	createdAt: ISODate;
 	doneAt: ISODate | null;
+	/** Blocks that really happened; they stay on the calendar after completion. */
+	history?: BlockSpan[];
+	/** Minutes of scheduled blocks already used, for tasks split across blocks. */
+	creditMin?: number;
+}
+
+export interface BlockSpan {
+	date: ISODate;
+	start: number;
+	end: number;
+}
+
+/** The lit block, fixed once it starts so its end time can't drift. */
+export interface ActiveBlock extends BlockSpan {
+	taskId: string;
 }
 
 export interface Project {
@@ -90,6 +105,8 @@ export interface Settings {
 	wipLimit: number;
 	focusMin: number;
 	breakMin: number;
+	/** 'fit' sizes the focus timer to the rest of the current block. */
+	focusMode?: 'fixed' | 'fit';
 	leave: ISODate[];
 	otjTarget: number;
 	otjStart: ISODate;
@@ -125,6 +142,9 @@ export interface Workspace {
 	nextCode: number;
 	nextProjectCode: number;
 	onboarded: boolean;
+	active?: ActiveBlock | null;
+	/** A block that ended with its task unfinished, waiting on "Did you complete this?". */
+	awaiting?: ActiveBlock | null;
 }
 
 export interface Badge {

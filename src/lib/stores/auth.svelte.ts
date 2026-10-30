@@ -3,12 +3,16 @@
  * httpOnly cookie the browser never reads; this store only mirrors who is
  * signed in and which step of a sign-in is pending.
  */
+import type { Tier } from '../tiers.ts';
+
 export { PW_RULES, validEmail } from '../auth-rules.ts';
 
 export interface User {
 	id: string;
 	name: string;
 	email: string;
+	tier: Tier;
+	developer: boolean;
 }
 
 export type Purpose = 'verify' | 'mfa';

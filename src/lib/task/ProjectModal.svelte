@@ -31,6 +31,7 @@
 			workspace.updateProject(p.id, patch);
 			toast('Project saved');
 		} else {
+			if (!workspace.canAdd('projects')) return;
 			const np = workspace.addProject(patch);
 			toast(`Project P-${String(np.code).padStart(2, '0')} created`);
 			goto(`/projects/${np.id}`);

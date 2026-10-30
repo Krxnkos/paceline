@@ -20,7 +20,13 @@
 
 	const today = $derived(clock.today);
 	const weeks = $derived(
-		weeklyLoad(workspace.settings, workspace.meetings, workspace.plan, today, 12)
+		weeklyLoad(
+			workspace.settings,
+			workspace.meetings,
+			workspace.plan,
+			today,
+			workspace.tier.insightWeeks
+		)
 	);
 	const last = $derived(addDays(weeks.at(-1)!.start, 6));
 	const focus7 = $derived(loggedHours(workspace.tasks, addDays(today, -6), today));
@@ -63,7 +69,7 @@
 	<PageHead
 		index="10"
 		eyebrow="Insights · forecast to {fmtDayMonth(last)}"
-		title="Twelve weeks."
+		title="{workspace.tier.insightWeeks} weeks."
 		accent="No blind spots."
 	/>
 
@@ -99,7 +105,11 @@
 		</div>
 		<div class="overflow-x-auto">
 			<div
-				class="grid h-[260px] min-w-[760px] grid-cols-12 items-end gap-2.5 px-[18px] pt-5 pb-3.5"
+				class="grid h-[260px] items-end gap-2.5 px-[18px] pt-5 pb-3.5"
+				style="grid-template-columns: repeat({weeks.length}, minmax(0, 1fr)); min-width: {Math.max(
+					320,
+					weeks.length * 62
+				)}px"
 				role="img"
 				aria-label="Weekly capacity chart"
 			>

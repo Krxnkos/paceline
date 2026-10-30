@@ -133,6 +133,16 @@ scoped to the `paceline` database.
 
 `PASSWORD_PEPPER` must never change once accounts exist: every password hash depends on it.
 
+## Plans and badges
+
+Every account shows one tier badge (Free, Pro or Ultimate) and, optionally, a Developer badge. There's no billing
+yet: set them on the account in MongoDB Atlas (_Browse Collections ▸ paceline ▸ users_), then reload.
+
+- `tier`: `"free"`, `"pro"` or `"ultimate"` (missing means Free). Limits live in `src/lib/tiers.ts`.
+- `developer`: `true` adds the Developer panel to Settings and `/api/debug`.
+
+Project and goal limits are enforced on the server. Theme, Timeline, forecast length and export gates are in the app.
+
 ## Local development
 
 `npm run dev` needs nothing else: it uses an in-memory MongoDB and shows email codes on screen. To use a real

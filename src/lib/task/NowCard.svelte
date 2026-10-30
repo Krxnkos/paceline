@@ -23,10 +23,14 @@
 	} = $props();
 
 	const task = $derived(lead?.task ?? null);
-	const mine = $derived(!!task && focus.state?.taskId === task.id);
-	const total = $derived(
-		mine && focus.state ? focus.state.total : (workspace.settings.focusMin ?? 25) * 60
+	const s = $derived(workspace.settings);
+	const fit = $derived(s.focusMode === 'fit');
+	const leadLeft = $derived(
+		lead ? Math.max(1, lead.state === 'now' ? lead.end - clock.minute : lead.end - lead.start) : 0
 	);
+	const plannedMin = $derived(fit && lead ? leadLeft : s.focusMin);
+	const mine = $derived(!!task && focus.state?.taskId === task.id);
+	const total = $derived(mine && focus.state ? focus.state.total : plannedMin * 60);
 	const remain = $derived(mine ? focus.remaining : total);
 	const r = 48;
 	const circ = 2 * Math.PI * r;
@@ -45,10 +49,20 @@
 					: 'NOTHING PLANNED'
 	);
 
+	const awaiting = $derived(workspace.awaiting);
+	const awaitingTask = $derived(workspace.task(awaiting?.taskId));
+
+	function setLength(min: number) {
+		workspace.updateSettings({
+			focusMin: Math.min(180, Math.max(1, Math.round(min) || 25)),
+			focusMode: 'fixed'
+		});
+	}
+
 	function toggle() {
 		if (!task) return;
 		if (mine) focus.toggle();
-		else focus.start(task.id);
+		else focus.start(task.id, plannedMin);
 	}
 </script>
 
@@ -58,6 +72,23 @@
 			>{phase}</span
 		>
 	</div>
+
+	{#if awaiting && awaitingTask}
+		<div role="alert" class="flex flex-col gap-3 border-b border-amber bg-amber/12 p-[18px]">
+			<span class="eyebrow text-amber">Block ended {minToHM(awaiting.end)}</span>
+			<span class="text-[15px] font-bold">Did you complete this?</span>
+			<span class="text-sm text-ink-2">{awaitingTask.title}</span>
+			<div class="flex flex-wrap gap-2">
+				<Button variant="primary" icon="check" onclick={() => workspace.confirmDone()}
+					>Yes, done</Button
+				>
+				<Button onclick={() => workspace.moreTime(15)}>+15 min</Button>
+				<Button onclick={() => workspace.moreTime(30)}>+30 min</Button>
+				<Button onclick={() => workspace.moreTime(60)}>+1 h</Button>
+				<Button variant="ghost" onclick={() => workspace.replanAwaiting()}>Not yet, re-plan</Button>
+			</div>
+		</div>
+	{/if}
 
 	{#if task && lead}
 		<div class="flex flex-wrap items-center gap-5 p-[18px]">
@@ -109,11 +140,7 @@
 						size="md"
 						icon={mine && focus.running ? 'pause' : 'play'}
 						onclick={toggle}
-						>{mine
-							? focus.running
-								? 'Pause'
-								: 'Resume'
-							: `Start focus · ${workspace.settings.focusMin}m`}</Button
+						>{mine ? (focus.running ? 'Pause' : 'Resume') : `Start focus · ${plannedMin}m`}</Button
 					>
 					{#if mine}
 						<Button size="md" onclick={() => focus.endAndLog()}>End & log</Button>
@@ -122,6 +149,37 @@
 						>Complete</Button
 					>
 				</div>
+				{#if !mine}
+					<div role="group" aria-label="Focus length" class="flex flex-wrap items-center gap-1.5">
+						{#each [15, 25, 45, 60] as m (m)}
+							<button
+								type="button"
+								aria-pressed={!fit && s.focusMin === m}
+								onclick={() => setLength(m)}
+								class="h-8 border px-2 font-mono text-[11px] {!fit && s.focusMin === m
+									? 'border-ink bg-ink text-canvas'
+									: 'border-line-3 text-ink-3 hover:text-ink'}">{m}m</button
+							>
+						{/each}
+						<input
+							type="number"
+							min="1"
+							max="180"
+							value={s.focusMin}
+							aria-label="Custom focus minutes"
+							onchange={(e) => setLength(Number(e.currentTarget.value))}
+							class="h-8 w-16 border border-line-3 bg-transparent px-2 font-mono text-[11px] text-ink"
+						/>
+						<button
+							type="button"
+							aria-pressed={fit}
+							onclick={() => workspace.updateSettings({ focusMode: fit ? 'fixed' : 'fit' })}
+							class="h-8 border px-2 font-mono text-[11px] uppercase {fit
+								? 'border-accent bg-accent text-accent-ink'
+								: 'border-line-3 text-ink-3 hover:text-ink'}">Fit the block</button
+						>
+					</div>
+				{/if}
 			</div>
 		</div>
 	{:else}

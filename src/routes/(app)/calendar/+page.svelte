@@ -47,7 +47,7 @@
 			.filter((m) => m.date === d)
 			.map((m) => ({ key: m.id, kind: 'meeting' as const, label: `${m.start} ${m.title}`, m }));
 		const due = workspace.tasks
-			.filter((t) => t.due === d && !t.inbox && filters.match(t))
+			.filter((t) => (t.status === 'done' ? t.doneAt === d : t.due === d) && filters.match(t))
 			.map((t) => ({ key: t.id, kind: 'task' as const, label: t.title, t }));
 		return [...meetings, ...due];
 	}
@@ -73,7 +73,8 @@
 			workspace.meetings,
 			s,
 			clock.minute,
-			clock.today
+			clock.today,
+			workspace.awaiting
 		)
 	);
 	const dueSel = $derived(workspace.tasks.filter((t) => t.due === selected && !t.inbox));

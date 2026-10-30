@@ -1,12 +1,22 @@
-import type { Goal, Meeting, Project, Settings, Status, Task, Workspace } from '../types.ts';
+import type {
+	BlockSpan,
+	Goal,
+	Meeting,
+	Project,
+	Settings,
+	Status,
+	Task,
+	Workspace
+} from '../types.ts';
 import { addDays, addMonths, fmtShort } from '../domain/dates.ts';
 import { parseCapture, type Parsed } from '../domain/parse.ts';
-import { buildPlan } from '../domain/plan.ts';
+import { buildPlan, remainingMin } from '../domain/plan.ts';
 import { alerts, code } from '../domain/forecast.ts';
 import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.ts';
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
-import { api } from './auth.svelte.ts';
+import { api, auth } from './auth.svelte.ts';
+import { tierInfo } from '../tiers.ts';
 
 /** Offline cache only; MongoDB is the source of truth. */
 const CACHE = (userId: string) => `pl-ws-cache:${userId}`;
@@ -40,17 +50,22 @@ class WorkspaceStore {
 	meetings = $derived(this.data?.meetings ?? []);
 	goals = $derived(this.data?.goals ?? []);
 	settings = $derived(this.data?.settings as Settings);
+	// A task waiting on "Did you complete this?" is paused until it's answered.
 	plan = $derived(
 		buildPlan(
-			this.tasks,
+			this.tasks.filter((t) => t.id !== this.data?.awaiting?.taskId),
 			this.meetings,
 			this.data?.settings ?? blankWorkspace(clock.today).settings,
-			clock.now
+			clock.now,
+			this.data?.active ?? null
 		)
 	);
 	alerts = $derived(
 		this.data ? alerts(this.tasks, this.projects, this.plan, this.data.settings, clock.today) : []
 	);
+	tier = $derived(tierInfo(auth.user?.tier));
+	active = $derived(this.data?.active ?? null);
+	awaiting = $derived(this.data?.awaiting ?? null);
 	inboxCount = $derived(this.tasks.filter((t) => t.inbox && t.status !== 'done').length);
 
 	status = $state<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle');
@@ -182,6 +197,18 @@ class WorkspaceStore {
 			toast('Updated from another device · your last change there won', { tone: 'err' });
 			return;
 		}
+		if (r.status === 403) {
+			// Over the plan's limit: put back the last saved copy.
+			const fresh = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+			if (fresh.ok && fresh.data?.data) {
+				this.data = fresh.data.data;
+				this.#version = fresh.data.version;
+				this.#writeCache();
+			}
+			this.saving = 'synced';
+			toast(r.error ?? 'That is over your plan’s limit.', { tone: 'err' });
+			return;
+		}
 		if (r.status === 401) {
 			this.saving = 'offline';
 			toast('Your session ended. Sign in again to save.', { tone: 'err' });
@@ -263,7 +290,7 @@ class WorkspaceStore {
 		}
 		return this.#change((ws) => {
 			let projectId = p.projectId ?? opts.defaults?.projectId ?? null;
-			if (p.newProject) {
+			if (p.newProject && this.canAdd('projects')) {
 				const proj: Project = {
 					id: uid(),
 					code: ws.nextProjectCode++,
@@ -333,13 +360,16 @@ class WorkspaceStore {
 				const t = ws.tasks.find((x) => x.id === id)!;
 				t.status = 'next';
 				t.doneAt = null;
+				t.history = (t.history ?? []).filter((h) => h.date < clock.today || h.end <= clock.minute);
 			});
 			toast(`Reopened ${code(t0.code)}`, { action: 'Undo', onAction: () => this.undo() });
 			return;
 		}
+		const planned = (this.plan.placed[id]?.blocks ?? []).map((b) => ({ ...b }));
 		let msg = `Completed ${code(t0.code)}`;
 		this.#change((ws) => {
 			const t = ws.tasks.find((x) => x.id === id)!;
+			this.#stamp(ws, t, planned);
 			t.status = 'done';
 			t.doneAt = clock.today;
 			t.inbox = false;
@@ -352,6 +382,8 @@ class WorkspaceStore {
 					status: 'next',
 					doneAt: null,
 					loggedMin: 0,
+					creditMin: 0,
+					history: [],
 					log: [],
 					due,
 					subtasks: t.subtasks.map((s) => ({ ...s, id: uid(), done: false }))
@@ -361,6 +393,121 @@ class WorkspaceStore {
 			}
 		});
 		toast(msg, { action: 'Undo', onAction: () => this.undo() });
+	}
+
+	/** Keep a finished task's blocks on the calendar. */
+	#stamp(ws: Workspace, t: Task, planned: BlockSpan[]) {
+		const today = clock.today;
+		const history = t.history ?? [];
+		if (ws.active?.taskId === t.id) {
+			const a = ws.active;
+			const end = Math.min(a.end, Math.max(clock.minute, a.start + 5));
+			t.history = [...history, { date: a.date, start: a.start, end }];
+			ws.active = null;
+		} else if (!history.some((h) => h.date === today)) {
+			const blocks = planned.filter((b) => b.date === today);
+			t.history = [
+				...history,
+				...blocks.map((b) => ({ date: b.date, start: b.start, end: b.end }))
+			];
+		}
+		if (ws.awaiting?.taskId === t.id) ws.awaiting = null;
+	}
+
+	/**
+	 * Runs each minute. Fixes the block in progress so its end can't drift; when it
+	 * ends unfinished, queues "Did you complete this?" (or, if the task continues in
+	 * a later block, counts the time and moves on).
+	 */
+	tick() {
+		const ws = this.data;
+		if (!ws || this.status !== 'ready') return;
+		const { today, minute } = clock;
+		let changed = false;
+		const a = ws.active;
+		if (a) {
+			const t = ws.tasks.find((x) => x.id === a.taskId);
+			if (!t || t.status === 'done') {
+				ws.active = null;
+				changed = true;
+			} else if (a.date < today || a.end <= minute) {
+				const len = a.end - a.start;
+				t.history = [...(t.history ?? []), { date: a.date, start: a.start, end: a.end }];
+				ws.active = null;
+				if (remainingMin(t) > len) t.creditMin = Math.max(t.loggedMin, t.creditMin ?? 0) + len;
+				else ws.awaiting = a;
+				changed = true;
+			}
+		}
+		if (!ws.active) {
+			const b = (this.plan.byDate[today] ?? []).find((x) => x.start <= minute && x.end > minute);
+			if (b) {
+				ws.active = { taskId: b.taskId, date: b.date, start: b.start, end: b.end };
+				changed = true;
+			}
+		}
+		if (changed) this.#persist();
+	}
+
+	/** "Did you complete this?" → Yes. */
+	confirmDone() {
+		const a = this.data?.awaiting;
+		if (a) this.complete(a.taskId);
+	}
+
+	/** "Did you complete this?" → Need more time: relight it from now. */
+	moreTime(minutes: number) {
+		const a = this.data?.awaiting;
+		if (!a) return;
+		this.#change((ws) => {
+			ws.awaiting = null;
+			ws.active = {
+				taskId: a.taskId,
+				date: clock.today,
+				start: clock.minute,
+				end: Math.min(1439, clock.minute + minutes)
+			};
+		});
+		toast(`Block extended by ${minutes} min`);
+	}
+
+	/** "Did you complete this?" → Not yet: hand it back to the planner. */
+	replanAwaiting() {
+		const a = this.data?.awaiting;
+		if (!a) return;
+		this.#change((ws) => {
+			ws.awaiting = null;
+			const t = ws.tasks.find((x) => x.id === a.taskId);
+			if (t) t.creditMin = 0;
+		});
+		toast('Back in the plan · schedule updated');
+	}
+
+	get version() {
+		return this.#version;
+	}
+
+	/** Developer tools: end the lit block now and raise its completion prompt. */
+	endActiveNow() {
+		const ws = this.data;
+		const a = ws?.active;
+		const t = ws?.tasks.find((x) => x.id === a?.taskId);
+		if (!ws || !a || !t) return;
+		const ended = { ...$state.snapshot(a), end: Math.max(a.start + 1, clock.minute) };
+		t.history = [...(t.history ?? []), { date: ended.date, start: ended.start, end: ended.end }];
+		ws.active = null;
+		ws.awaiting = ended;
+		this.#persist();
+	}
+
+	/** Whether the plan allows another project or goal. */
+	canAdd(kind: 'projects' | 'goals') {
+		const left = this[kind].length < this.tier[kind];
+		if (!left)
+			toast(`${this.tier.label} includes ${this.tier[kind]} ${kind}. Upgrade for more.`, {
+				tone: 'err'
+			});
+		return left;
 	}
 
 	deleteTask(id: string) {
@@ -383,10 +530,16 @@ class WorkspaceStore {
 
 	updateMany(ids: string[], patch: Partial<Task>) {
 		const set = new Set(ids);
+		const plans = new Map(
+			ids.map((id) => [id, (this.plan.placed[id]?.blocks ?? []).map((b) => ({ ...b }))])
+		);
 		this.#change((ws) => {
 			for (const t of ws.tasks)
-				if (set.has(t.id))
+				if (set.has(t.id)) {
+					if (patch.status === 'done' && t.status !== 'done')
+						this.#stamp(ws, t, plans.get(t.id) ?? []);
 					Object.assign(t, patch, patch.status === 'done' ? { doneAt: clock.today } : {});
+				}
 		});
 	}
 

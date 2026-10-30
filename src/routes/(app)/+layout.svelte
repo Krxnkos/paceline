@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell from '#lib/shell/AppShell.svelte';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
 	import { theme } from '#lib/stores/theme.svelte.ts';
+	import { clock } from '#lib/stores/clock.svelte.ts';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -29,6 +31,12 @@
 	$effect(() => {
 		const t = workspace.data?.settings.theme;
 		if (t && t !== theme.choice) theme.set(t);
+	});
+
+	// Each minute: fix the lit block, and notice when it ends.
+	$effect(() => {
+		void clock.minute;
+		if (workspace.status === 'ready') untrack(() => workspace.tick());
 	});
 
 	const ready = $derived(

@@ -1,6 +1,7 @@
 import { dev } from '$app/env';
 import { error, type Cookies } from '@sveltejs/kit';
 import type { Gateway } from './gateway.ts';
+import { tierInfo, type Tier } from '../tiers.ts';
 import type { Config } from './config.ts';
 import {
 	DUMMY_HASH,
@@ -29,15 +30,26 @@ export interface UserDoc {
 	verified: boolean;
 	createdAt: Date;
 	trusted: { h: string; exp: Date }[];
+	/** Set on the account in MongoDB; requests can never change these. */
+	tier?: Tier;
+	developer?: boolean;
 }
 
 export interface PublicUser {
 	id: string;
 	name: string;
 	email: string;
+	tier: Tier;
+	developer: boolean;
 }
 
-export const publicUser = (u: UserDoc): PublicUser => ({ id: u._id, name: u.name, email: u.email });
+export const publicUser = (u: UserDoc): PublicUser => ({
+	id: u._id,
+	name: u.name,
+	email: u.email,
+	tier: tierInfo(u.tier).id,
+	developer: dev || u.developer === true // always on for the local dev server
+});
 
 export interface Ctx {
 	db: Gateway;

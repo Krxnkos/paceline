@@ -7,6 +7,9 @@
 	import Button from '#lib/ui/Button.svelte';
 	import ConfirmButton from '#lib/ui/ConfirmButton.svelte';
 	import ThemePicker from '#lib/ui/ThemePicker.svelte';
+	import PlanBadge from '#lib/ui/PlanBadge.svelte';
+	import DeveloperPanel from '#lib/shell/DeveloperPanel.svelte';
+	import { TIERS } from '#lib/tiers.ts';
 	import Icon from '#lib/ui/Icon.svelte';
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
@@ -194,6 +197,17 @@
 						workspace.updateSettings({ focusMin: num(e.currentTarget.value, 5, 120) })}
 				/>
 			</Field>
+			<Field label="Focus timer" hint="Fit the block runs for the rest of the current block.">
+				<Select
+					value={s.focusMode ?? 'fixed'}
+					options={[
+						{ value: 'fixed', label: 'Set length' },
+						{ value: 'fit', label: 'Fit the block' }
+					]}
+					onchange={(e) =>
+						workspace.updateSettings({ focusMode: e.currentTarget.value as 'fixed' | 'fit' })}
+				/>
+			</Field>
 			<Field label="Break · minutes">
 				<input
 					type="number"
@@ -297,8 +311,14 @@
 				sign in on. Export a copy any time.
 			</p>
 			<div class="flex flex-wrap gap-2.5">
-				<Button icon="download" onclick={exportData}>Export JSON</Button>
-				<Button icon="upload" onclick={() => fileInput?.click()}>Import JSON</Button>
+				<Button icon="download" disabled={!workspace.tier.dataTools} onclick={exportData}
+					>Export JSON</Button
+				>
+				<Button
+					icon="upload"
+					disabled={!workspace.tier.dataTools}
+					onclick={() => fileInput?.click()}>Import JSON</Button
+				>
 				<input
 					bind:this={fileInput}
 					type="file"
@@ -331,6 +351,26 @@
 			</div>
 		</div>
 	</Panel>
+
+	<Panel title="Plan">
+		<div class="grid gap-3 p-[18px] sm:grid-cols-3">
+			{#each Object.values(TIERS) as t (t.id)}
+				<div
+					class="flex flex-col gap-2 border p-3 {t.id === auth.user?.tier
+						? 'border-accent'
+						: 'border-line'}"
+				>
+					<span class="flex items-center justify-between gap-2">
+						<PlanBadge kind={t.id} />
+						{#if t.id === auth.user?.tier}<span class="eyebrow text-[9.5px]">Current</span>{/if}
+					</span>
+					{#each t.perks as p (p)}<span class="text-[13px] text-ink-3">{p}</span>{/each}
+				</div>
+			{/each}
+		</div>
+	</Panel>
+
+	{#if auth.user?.developer}<DeveloperPanel />{/if}
 
 	<Panel title="Account">
 		<div class="flex flex-col gap-4 p-[18px]">

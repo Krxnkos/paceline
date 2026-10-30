@@ -1,4 +1,5 @@
 import { workspace } from './workspace.svelte.ts';
+import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
 
 export interface FocusState {
@@ -65,8 +66,16 @@ class Focus {
 		this.#timer = null;
 	}
 
-	start(taskId: string | null, minutes = workspace.settings?.focusMin ?? 25) {
-		const total = minutes * 60;
+	/** Minutes for the next focus block: the set length, or what's left of the lit block. */
+	plannedMin(): number {
+		const s = workspace.settings;
+		const a = workspace.active;
+		if (s?.focusMode === 'fit' && a) return Math.max(1, a.end - clock.minute);
+		return s?.focusMin ?? 25;
+	}
+
+	start(taskId: string | null, minutes = this.plannedMin()) {
+		const total = Math.max(1, minutes) * 60;
 		this.state = {
 			taskId,
 			phase: 'focus',
