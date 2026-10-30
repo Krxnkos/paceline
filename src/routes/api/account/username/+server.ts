@@ -24,7 +24,7 @@ export async function POST(event) {
 		{ $set: { username: check.username } }
 	);
 	if (r.matched !== 1) {
-		await ctx.db.deleteMany('usernames', { _id: check.username });
+		await ctx.db.deleteMany('usernames', { _id: check.username, userId: user._id });
 		error(409, 'Your username is permanent and can’t be changed.');
 	}
 	return json({ user: publicUser({ ...user, username: check.username }) });
