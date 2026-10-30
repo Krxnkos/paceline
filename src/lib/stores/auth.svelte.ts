@@ -11,7 +11,9 @@ export interface User {
 	id: string;
 	name: string;
 	email: string;
+	username: string | null;
 	tier: Tier;
+	tierExpiresAt: string | null;
 	developer: boolean;
 }
 
@@ -143,6 +145,13 @@ class Auth {
 
 	resetPassword(token: string, password: string) {
 		return api('POST', '/api/auth/reset/confirm', { token, password });
+	}
+
+	/** Claim the permanent username. */
+	async setUsername(username: string) {
+		const r = await api<{ user: User }>('POST', '/api/account/username', { username });
+		if (r.ok && r.data) this.user = r.data.user;
+		return r;
 	}
 
 	async rename(name: string) {

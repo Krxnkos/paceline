@@ -25,6 +25,7 @@ export const ICONS = {
 	edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
 	trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
 	logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
+	terminal: '<rect x="3" y="4" width="18" height="16"/><path d="M7 9l3 3-3 3M13 15h4"/>',
 	circle: '<circle cx="12" cy="12" r="7"/>',
 	crown: '<path d="M4 18h16M4 15 3 7l5 4 4-6 4 6 5-4-1 8z"/>',
 	code: '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/>',

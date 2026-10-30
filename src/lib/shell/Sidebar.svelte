@@ -5,7 +5,7 @@
 	import Mark from '../ui/Mark.svelte';
 	import Avatar from '../ui/Avatar.svelte';
 	import PlanBadge from '../ui/PlanBadge.svelte';
-	import { NAV, SETTINGS_NAV, type NavEntry } from './nav.ts';
+	import { CONSOLE_NAV, NAV, SETTINGS_NAV, type NavEntry } from './nav.ts';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import { auth, shortName } from '../stores/auth.svelte.ts';
 	import { theme, THEMES } from '../stores/theme.svelte.ts';
@@ -87,6 +87,7 @@
 	{/each}
 
 	<div class="mt-auto flex flex-col gap-0.5 border-t border-line pt-3.5">
+		{#if auth.user?.developer}{@render item(CONSOLE_NAV)}{/if}
 		{@render item(SETTINGS_NAV)}
 		<div class="relative">
 			<button
@@ -99,7 +100,9 @@
 				<Avatar name={auth.user?.name ?? '?'} />
 				<span class="flex min-w-0 flex-col">
 					<span class="truncate text-[14px] font-semibold text-ink"
-						>{shortName(auth.user?.name ?? '')}</span
+						>{auth.user?.username
+							? `@${auth.user.username}`
+							: shortName(auth.user?.name ?? '')}</span
 					>
 					<span class="font-mono text-[10px] tracking-[0.08em] text-muted uppercase"
 						>{syncLabel}</span

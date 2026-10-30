@@ -6,11 +6,26 @@
  */
 import type { Document, Filter, MongoClient, UpdateFilter } from 'mongodb';
 
-export const COLLECTIONS = ['users', 'sessions', 'codes', 'limits', 'workspaces'] as const;
+export const COLLECTIONS = [
+	'users',
+	'sessions',
+	'codes',
+	'limits',
+	'workspaces',
+	'usernames',
+	'audit'
+] as const;
 export type Coll = (typeof COLLECTIONS)[number];
+
+export interface ManyOptions {
+	limit: number;
+	sort?: Record<string, 1 | -1>;
+	projection?: Record<string, 1>;
+}
 
 export interface Gateway {
 	findOne(coll: Coll, filter: Document): Promise<Document | null>;
+	findMany(coll: Coll, filter: Document, opts: ManyOptions): Promise<Document[]>;
 	insertOne(coll: Coll, doc: Document): Promise<{ ok: boolean; duplicate: boolean }>;
 	updateOne(
 		coll: Coll,
@@ -77,6 +92,13 @@ export class MongoCore implements Gateway {
 
 	async findOne(coll: Coll, filter: Document) {
 		return (await this.#coll(coll)).findOne(filter as Filter<Document>);
+	}
+
+	async findMany(coll: Coll, filter: Document, opts: ManyOptions) {
+		return (await this.#coll(coll))
+			.find(filter as Filter<Document>, { projection: opts.projection, sort: opts.sort })
+			.limit(Math.min(opts.limit, 100))
+			.toArray();
 	}
 
 	async insertOne(coll: Coll, doc: Document) {

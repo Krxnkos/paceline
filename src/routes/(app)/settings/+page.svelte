@@ -392,7 +392,7 @@
 				<Button type="submit">Save</Button>
 			</form>
 			<div class="font-mono text-xs text-muted">
-				{auth.user?.email} · synced · private to you
+				{auth.user?.username ? `@${auth.user.username} · permanent · ` : ''}{auth.user?.email}
 			</div>
 			<div class="flex flex-wrap gap-2.5 border-t border-line pt-4">
 				<Button

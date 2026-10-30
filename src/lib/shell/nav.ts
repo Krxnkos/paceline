@@ -116,8 +116,17 @@ export const SETTINGS_NAV: NavEntry = {
 	key: ','
 };
 
+export const CONSOLE_NAV: NavEntry = {
+	href: '/console',
+	label: 'Console',
+	icon: 'terminal',
+	index: '12',
+	sub: 'Developer commands',
+	key: ''
+};
+
 export const ALL_NAV: NavEntry[] = [...NAV.flatMap((g) => g.items), SETTINGS_NAV];
 
 export function navFor(path: string): NavEntry | undefined {
-	return ALL_NAV.find((n) => path === n.href || path.startsWith(n.href + '/'));
+	return [...ALL_NAV, CONSOLE_NAV].find((n) => path === n.href || path.startsWith(n.href + '/'));
 }
