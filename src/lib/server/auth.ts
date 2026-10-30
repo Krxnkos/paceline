@@ -1,7 +1,7 @@
 import { dev } from '$app/env';
 import { error, type Cookies } from '@sveltejs/kit';
 import type { Gateway } from './gateway.ts';
-import { tierInfo, type Tier } from '../tiers.ts';
+import { effectiveTier, type Tier } from '../tiers.ts';
 import type { Config } from './config.ts';
 import {
 	DUMMY_HASH,
@@ -32,14 +32,19 @@ export interface UserDoc {
 	trusted: { h: string; exp: Date }[];
 	/** Set on the account in MongoDB; requests can never change these. */
 	tier?: Tier;
+	tierExpiresAt?: Date | null;
 	developer?: boolean;
+	/** Set once, then permanent. */
+	username?: string;
 }
 
 export interface PublicUser {
 	id: string;
 	name: string;
 	email: string;
+	username: string | null;
 	tier: Tier;
+	tierExpiresAt: string | null;
 	developer: boolean;
 }
 
@@ -47,7 +52,10 @@ export const publicUser = (u: UserDoc): PublicUser => ({
 	id: u._id,
 	name: u.name,
 	email: u.email,
-	tier: tierInfo(u.tier).id,
+	username: u.username ?? null,
+	tier: effectiveTier(u),
+	tierExpiresAt:
+		effectiveTier(u) !== 'free' && u.tierExpiresAt ? new Date(u.tierExpiresAt).toISOString() : null,
 	developer: dev || u.developer === true // always on for the local dev server
 });
 
@@ -324,7 +332,8 @@ export async function deleteAccount(ctx: Ctx, user: UserDoc) {
 	await Promise.all([
 		ctx.db.deleteMany('workspaces', { _id: user._id }),
 		ctx.db.deleteMany('sessions', { userId: user._id }),
-		ctx.db.deleteMany('codes', { userId: user._id })
+		ctx.db.deleteMany('codes', { userId: user._id }),
+		ctx.db.deleteMany('usernames', { userId: user._id })
 	]);
 	await ctx.db.deleteMany('users', { _id: user._id });
 	ctx.cookies.delete(SESSION_COOKIE, { path: '/' });

@@ -3,6 +3,7 @@
 	import Mark from '../ui/Mark.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
+	import AccountStatus from './AccountStatus.svelte';
 	import { auth, PW_RULES, validEmail } from '../stores/auth.svelte.ts';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import { clock } from '../stores/clock.svelte.ts';
@@ -497,6 +498,7 @@
 							: 'SIGNED IN'}
 					</div>
 					<h2 class="m-0 text-[38px] heavy leading-none">{doneTitle}</h2>
+					{#if auth.user}<AccountStatus user={auth.user} />{/if}
 					<p class="m-0 text-[15px] leading-relaxed text-ink-3">{preview}</p>
 					<button type="button" class="pl-primary" onclick={openToday}>
 						{workspace.data ? 'Open today' : 'Set up your plan'}

@@ -53,7 +53,8 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"dependencies": {
-		"mongodb": "^7.7.0"
+		"mongodb": "^7.7.0",
+		"obscenity": "^0.4.6"
 	},
 	"allowScripts": {
 		"esbuild@0.28.2": true,

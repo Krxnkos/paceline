@@ -8,7 +8,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { MongoClient, type Document } from 'mongodb';
-import { MongoCore, type Coll } from '../../../src/lib/server/gateway.ts';
+import { MongoCore, type Coll, type ManyOptions } from '../../../src/lib/server/gateway.ts';
 
 interface Env {
 	MONGODB_URI: string;
@@ -33,6 +33,9 @@ export class MongoGateway extends DurableObject<Env> {
 
 	findOne(coll: Coll, filter: Document) {
 		return this.core.findOne(coll, filter);
+	}
+	findMany(coll: Coll, filter: Document, opts: ManyOptions) {
+		return this.core.findMany(coll, filter, opts);
 	}
 	insertOne(coll: Coll, doc: Document) {
 		return this.core.insertOne(coll, doc);

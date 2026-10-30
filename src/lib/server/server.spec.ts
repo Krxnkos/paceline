@@ -9,6 +9,9 @@ import {
 	verifyPassword
 } from './crypto.ts';
 import * as v from './validate.ts';
+import { checkUsername } from './username.ts';
+import { parseDuration, tokenize } from './console.ts';
+import { effectiveTier } from '../tiers.ts';
 
 const PEPPER = 'p'.repeat(48);
 
@@ -105,5 +108,51 @@ describe('validation', () => {
 		expect(status(() => v.code('123456'))).toBe(200);
 		expect(status(() => v.token('short'))).toBe(400);
 		expect(status(() => v.token(randomToken()))).toBe(200);
+	});
+});
+
+describe('usernames', () => {
+	const ok = (s: unknown) => checkUsername(s).ok;
+
+	it('accepts normal names and stores them lower-case', () => {
+		expect(checkUsername('@Krxn_07')).toEqual({ ok: true, username: 'krxn_07' });
+		expect(ok('cassie')).toBe(true);
+		expect(ok('dickens')).toBe(true);
+	});
+
+	it('rejects bad formats', () => {
+		for (const s of ['ab', '1abc', 'has space', 'a'.repeat(21), 'semi;colon', '', 42])
+			expect(ok(s)).toBe(false);
+	});
+
+	it('rejects reserved names', () => {
+		for (const s of ['admin', 'Paceline', 'support', 'moderator']) expect(ok(s)).toBe(false);
+	});
+
+	it('rejects offensive names, however they are disguised', () => {
+		for (const s of ['fuck3r', 'f_u_c_k', 'sh1t', 'b1tch', 'h1tler', 'n_a_z_i'])
+			expect(ok(s)).toBe(false);
+	});
+});
+
+describe('subscriptions', () => {
+	it('falls back to Free when a timed plan runs out', () => {
+		const past = new Date(Date.now() - 1000);
+		const future = new Date(Date.now() + 60_000);
+		expect(effectiveTier({ tier: 'pro', tierExpiresAt: past })).toBe('free');
+		expect(effectiveTier({ tier: 'pro', tierExpiresAt: future })).toBe('pro');
+		expect(effectiveTier({ tier: 'ultimate', tierExpiresAt: null })).toBe('ultimate');
+		expect(effectiveTier({ tier: 'nonsense' })).toBe('free');
+		expect(effectiveTier({})).toBe('free');
+	});
+
+	it('reads console durations', () => {
+		expect(parseDuration('12h')).toBe(43_200_000);
+		expect(parseDuration('30d')).toBe(2_592_000_000);
+		expect(parseDuration('permanent')).toBeNull();
+		expect(parseDuration('soon')).toBeUndefined();
+		expect(parseDuration('0d')).toBeUndefined();
+		expect(parseDuration('99999y')).toBeUndefined();
+		expect(tokenize('  grant  @a pro  30d ')).toEqual(['grant', '@a', 'pro', '30d']);
 	});
 });

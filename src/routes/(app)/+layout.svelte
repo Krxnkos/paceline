@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell from '#lib/shell/AppShell.svelte';
+	import UsernameGate from '#lib/auth/UsernameGate.svelte';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
 	import { theme } from '#lib/stores/theme.svelte.ts';
@@ -47,7 +48,9 @@
 
 <svelte:window ononline={() => workspace.retry()} />
 
-{#if ready}
+{#if ready && !auth.user?.username}
+	<UsernameGate />
+{:else if ready}
 	<AppShell>
 		{@render children()}
 	</AppShell>

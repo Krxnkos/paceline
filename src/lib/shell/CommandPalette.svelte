@@ -8,7 +8,8 @@
 	import { focus } from '../stores/focus.svelte.ts';
 	import { theme, THEMES } from '../stores/theme.svelte.ts';
 	import { code } from '../domain/forecast.ts';
-	import { ALL_NAV } from './nav.ts';
+	import { ALL_NAV, CONSOLE_NAV } from './nav.ts';
+	import { auth } from '../stores/auth.svelte.ts';
 
 	interface Command {
 		id: string;
@@ -113,14 +114,16 @@
 				run: () => (ui.shortcuts = true)
 			}
 		].filter((c) => c.id === 'new' || match(c.label)) as Command[];
-		const views: Command[] = ALL_NAV.filter((n) => match(n.label)).map((n) => ({
-			id: n.href,
-			label: `Go to ${n.label}`,
-			hint: `G ${n.key.toUpperCase()}`,
-			icon: n.icon,
-			group: 'Go to',
-			run: () => goto(n.href)
-		}));
+		const views: Command[] = [...ALL_NAV, ...(auth.user?.developer ? [CONSOLE_NAV] : [])]
+			.filter((n) => match(n.label))
+			.map((n) => ({
+				id: n.href,
+				label: `Go to ${n.label}`,
+				hint: `G ${n.key.toUpperCase()}`,
+				icon: n.icon,
+				group: 'Go to',
+				run: () => goto(n.href)
+			}));
 		return [...tasks, ...actions, ...views];
 	});
 

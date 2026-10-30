@@ -49,4 +49,10 @@ export const TIERS: Record<Tier, TierInfo> = {
 	}
 };
 
+/** The plan in force now: a timed grant falls back to Free when it runs out. */
+export function effectiveTier(u: { tier?: unknown; tierExpiresAt?: Date | string | null }): Tier {
+	const t = TIERS[u.tier as Tier] ? (u.tier as Tier) : 'free';
+	return u.tierExpiresAt && new Date(u.tierExpiresAt).getTime() <= Date.now() ? 'free' : t;
+}
+
 export const tierInfo = (t: unknown): TierInfo => TIERS[t as Tier] ?? TIERS.free;

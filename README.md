@@ -133,13 +133,33 @@ scoped to the `paceline` database.
 
 `PASSWORD_PEPPER` must never change once accounts exist: every password hash depends on it.
 
-## Plans and badges
+## Usernames
 
-Every account shows one tier badge (Free, Pro or Ultimate) and, optionally, a Developer badge. There's no billing
-yet: set them on the account in MongoDB Atlas (_Browse Collections ▸ paceline ▸ users_), then reload.
+After verifying their email, each person chooses a username before entering the app (existing accounts are asked
+at their next visit). It can't be changed. The rules, reserved names and offensive-word checks are in
+`src/lib/server/username.ts`, and uniqueness comes from the `usernames` collection.
 
-- `tier`: `"free"`, `"pro"` or `"ultimate"` (missing means Free). Limits live in `src/lib/tiers.ts`.
-- `developer`: `true` adds the Developer panel to Settings and `/api/debug`.
+## Plans, badges and the developer console
+
+Every account shows one tier badge (Free, Pro or Ultimate) and, optionally, a Developer badge; both appear at
+sign-in and in the sidebar. There's no billing yet. Limits live in `src/lib/tiers.ts`.
+
+Give the first Developer the badge in MongoDB Atlas (_Browse Collections ▸ paceline ▸ users_): add `developer: true`
+to the account, then reload. Developers then get **Console** in the sidebar:
+
+```
+help
+users [text]
+user <@username|email>
+grant <@username|email> <pro|ultimate> <12h|30d|8w|6mo|1y|permanent>
+revoke <@username|email>
+dev <@username|email> <on|off>
+audit [count]
+```
+
+Commands run on the server, are limited to Developer accounts, and every change is written to the `audit`
+collection. Timed plans fall back to Free by themselves when they run out. Developers can't change their own badge
+from the console.
 
 Project and goal limits are enforced on the server. Theme, Timeline, forecast length and export gates are in the app.
 
