@@ -17,6 +17,8 @@ import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
 import { api, auth } from './auth.svelte.ts';
 import { tierInfo } from '../tiers.ts';
+import type { Column, Label } from '../types.ts';
+import { STATUSES } from '../types.ts';
 
 /** Offline cache only; MongoDB is the source of truth. */
 const CACHE = (userId: string) => `pl-ws-cache:${userId}`;
@@ -64,6 +66,8 @@ class WorkspaceStore {
 		this.data ? alerts(this.tasks, this.projects, this.plan, this.data.settings, clock.today) : []
 	);
 	tier = $derived(tierInfo(auth.user?.tier));
+	columns = $derived(this.data?.columns?.length ? this.data.columns : STATUSES);
+	labels = $derived(this.data?.labels ?? []);
 	active = $derived(this.data?.active ?? null);
 	awaiting = $derived(this.data?.awaiting ?? null);
 	inboxCount = $derived(this.tasks.filter((t) => t.inbox && t.status !== 'done').length);
@@ -307,6 +311,7 @@ class WorkspaceStore {
 				title: p.title,
 				projectId,
 				priority: p.imp ?? opts.defaults?.priority ?? 3,
+				scope: p.personal && this.tier.personal ? 'personal' : opts.defaults?.scope,
 				category: p.cat ?? opts.defaults?.category ?? (p.quick ? 'Admin' : 'Deep Work'),
 				due: p.due ?? opts.defaults?.due ?? null,
 				estimateMin: p.est ?? (p.quick ? 10 : 30),
@@ -498,6 +503,73 @@ class WorkspaceStore {
 		ws.active = null;
 		ws.awaiting = ended;
 		this.#persist();
+	}
+
+	// ── Board columns and labels (Pro and Ultimate) ───────────
+
+	#columns(ws: Workspace): Column[] {
+		ws.columns ??= STATUSES.map((c) => ({ ...c }));
+		return ws.columns!;
+	}
+
+	addColumn(label: string) {
+		this.#change((ws) => {
+			const cols = this.#columns(ws);
+			cols.splice(Math.max(0, cols.length - 1), 0, { id: `c-${uid()}`, label });
+		});
+	}
+
+	renameColumn(id: Status, label: string) {
+		this.#change((ws) => {
+			const c = this.#columns(ws).find((x) => x.id === id);
+			if (c) c.label = label;
+		});
+	}
+
+	moveColumn(id: Status, dir: -1 | 1) {
+		this.#change((ws) => {
+			const cols = this.#columns(ws);
+			const i = cols.findIndex((c) => c.id === id);
+			const j = i + dir;
+			if (i < 0 || j < 0 || j >= cols.length) return;
+			const moved = cols.splice(i, 1);
+			cols.splice(j, 0, ...moved.map((c) => $state.snapshot(c)));
+		});
+	}
+
+	/** Backlog, In progress and Done carry meaning, so only the others can go. */
+	deleteColumn(id: Status) {
+		if (id === 'backlog' || id === 'doing' || id === 'done') return;
+		this.#change((ws) => {
+			ws.columns = this.#columns(ws).filter((c) => c.id !== id);
+			for (const t of ws.tasks) if (t.status === id) t.status = 'backlog';
+		});
+		toast('Column deleted · its tasks moved to Backlog', {
+			action: 'Undo',
+			onAction: () => this.undo()
+		});
+	}
+
+	addLabel(name: string, color: Label['color']): Label {
+		return this.#change((ws) => {
+			const label = { id: `l-${uid()}`, name, color };
+			ws.labels = [...(ws.labels ?? []), label];
+			return label;
+		});
+	}
+
+	deleteLabel(id: string) {
+		this.#change((ws) => {
+			ws.labels = (ws.labels ?? []).filter((l) => l.id !== id);
+			for (const t of ws.tasks) if (t.labels) t.labels = t.labels.filter((x) => x !== id);
+		});
+		toast('Label deleted', { action: 'Undo', onAction: () => this.undo() });
+	}
+
+	/** Whether this account may use a theme. */
+	themeAllowed(t: { access: string }) {
+		if (t.access === 'developer') return !!auth.user?.developer;
+		return ['free', 'pro', 'ultimate'].indexOf(t.access) <= this.tier.themeLevel;
 	}
 
 	/** Whether the plan allows another project or goal. */

@@ -19,7 +19,18 @@
 		<script nonce="%sveltekit.nonce%">
 			// Runs before first paint so the theme never flashes.
 			(() => {
-				const ids = ['carbon', 'chalk', 'midnight', 'frost', 'ember', 'sand'];
+				const ids = [
+					'carbon',
+					'chalk',
+					'midnight',
+					'frost',
+					'ember',
+					'sand',
+					'harbor',
+					'orchid',
+					'gilt',
+					'terminal'
+				];
 				let c = 'system';
 				try {
 					c = localStorage.getItem('pl-theme') ?? 'system';

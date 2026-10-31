@@ -46,6 +46,12 @@ export function score(t: Task, today: ISODate): number {
 	return s;
 }
 
+/** Days that belong to personal tasks; work is never scheduled on them. */
+export function isPersonalDay(settings: Settings, date: ISODate): boolean {
+	const k = patternFor(settings, date).kind;
+	return k === 'personal' || k === 'off';
+}
+
 /** A task the planner may place: open, triaged, not a quick win, not manual. */
 export function isSchedulable(t: Task): boolean {
 	return t.status !== 'done' && !t.inbox && !t.quick && t.start !== 'manual' && remainingMin(t) > 0;
@@ -71,6 +77,25 @@ export function freeIntervals(settings: Settings, meetings: Meeting[], date: ISO
 	if (p.kind !== 'work') return [];
 	let free: Interval[] = [[hmToMin(p.start), hmToMin(p.end)]];
 	if (p.lunch) free = subtract(free, hmToMin(p.lunch[0]), hmToMin(p.lunch[1]));
+	for (const m of meetings)
+		if (m.date === date) free = subtract(free, hmToMin(m.start), hmToMin(m.end));
+	return free;
+}
+
+/** Non-working days are open to personal tasks during these hours. */
+const OFF_DAY_HOURS: Interval = [9 * 60, 18 * 60];
+
+/** Free time for personal tasks: Personal and non-working days only. */
+export function personalIntervals(
+	settings: Settings,
+	meetings: Meeting[],
+	date: ISODate
+): Interval[] {
+	const p = patternFor(settings, date);
+	if (p.kind !== 'personal' && p.kind !== 'off') return [];
+	let free: Interval[] = [
+		p.kind === 'personal' ? [hmToMin(p.start), hmToMin(p.end)] : OFF_DAY_HOURS
+	];
 	for (const m of meetings)
 		if (m.date === date) free = subtract(free, hmToMin(m.start), hmToMin(m.end));
 	return free;
@@ -109,10 +134,11 @@ export function buildPlan(
 	const nm = Math.floor(nowMin(now) / 15) * 15;
 	const days = new Map<ISODate, DayState>();
 
-	const day = (date: ISODate): DayState => {
+	const day = (date: ISODate, personal: boolean): DayState => {
 		let d = days.get(date);
 		if (d) return d;
-		const full = freeIntervals(settings, meetings, date);
+		// A day is either work or personal, never both, so one state per date is enough.
+		const full = (personal ? personalIntervals : freeIntervals)(settings, meetings, date);
 		const fullFree = total(full);
 		let free = full;
 		if (date === today) free = subtract(full, 0, nm);
@@ -173,7 +199,9 @@ export function buildPlan(
 		const afternoonFirst = t.category === 'Admin' || t.category === 'Comms';
 		for (let i = Math.max(0, diffDays(earliestDate, today)); i < HORIZON_DAYS && r > 0; i++) {
 			const date = addDays(today, i);
-			const d = day(date);
+			const personal = t.scope === 'personal';
+			if (personal !== isPersonalDay(settings, date)) continue;
+			const d = day(date, personal);
 			if (d.budget <= 0) continue;
 			const floor = date === earliestDate ? earliestMin : 0;
 			const order = [...d.free]

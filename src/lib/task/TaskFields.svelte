@@ -1,7 +1,8 @@
 <script lang="ts">
 	// The editable property grid shared by the drawer and the new-task modal.
 	import type { Task } from '../types.ts';
-	import { CATEGORIES, STATUSES, REPEATS, START_MODES } from '../types.ts';
+	import { CATEGORIES, REPEATS, START_MODES } from '../types.ts';
+	import LabelPicker from './LabelPicker.svelte';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import Select from '../ui/Select.svelte';
 	import { input, label } from '../ui/styles.ts';
@@ -34,7 +35,7 @@
 		<span class={label}>Status</span>
 		<Select
 			value={task.status}
-			options={STATUSES.map((s) => ({ value: s.id, label: s.label }))}
+			options={workspace.columns.map((s) => ({ value: s.id, label: s.label }))}
 			onchange={(e) => set('status', e.currentTarget.value as Task['status'])}
 			aria-label="Status"
 		/>
@@ -54,6 +55,18 @@
 		options={CATEGORIES.map((c) => ({ value: c, label: c }))}
 		onchange={(e) => set('category', e.currentTarget.value as Task['category'])}
 		aria-label="Category"
+	/>
+
+	<span class={label}>Type</span>
+	<Select
+		value={task.scope ?? 'work'}
+		disabled={!workspace.tier.personal}
+		options={[
+			{ value: 'work', label: 'Work' },
+			{ value: 'personal', label: workspace.tier.personal ? 'Personal' : 'Personal · Pro' }
+		]}
+		onchange={(e) => set('scope', e.currentTarget.value as Task['scope'])}
+		aria-label="Task type"
 	/>
 
 	<span class={label}>Priority</span>
@@ -133,4 +146,7 @@
 		onchange={(e) => set('repeat', e.currentTarget.value as Task['repeat'])}
 		aria-label="Repeat"
 	/>
+
+	<span class={label}>Labels</span>
+	<LabelPicker selected={task.labels ?? []} onchange={(labels) => set('labels', labels)} />
 </div>

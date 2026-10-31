@@ -29,7 +29,13 @@
 	const days = $derived(
 		Array.from({ length: 7 }, (_, i) => addDays(start, i)).filter((d) => {
 			const k = dow(d);
-			return (k !== 0 && k !== 6) || patternFor(s, d).kind === 'work';
+			const kind = patternFor(s, d).kind;
+			return (
+				(k !== 0 && k !== 6) ||
+				kind === 'work' ||
+				kind === 'personal' ||
+				!!workspace.plan.byDate[d]?.length
+			);
 		})
 	);
 	const workDays = $derived(days.filter((d) => isWorkday(s, d)));

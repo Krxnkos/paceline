@@ -11,6 +11,7 @@ export interface Parsed {
 	title: string;
 	imp?: Priority;
 	cat?: Category;
+	personal?: boolean;
 	projectId?: string;
 	newProject?: string;
 	due?: ISODate;
@@ -135,6 +136,10 @@ export function parseCapture(text: string, ctx: ParseContext): Parsed {
 		}
 		if (w.length > 1 && w[0] === '#') {
 			const key = w.slice(1).toLowerCase();
+			if (key === 'personal') {
+				out.personal = true;
+				continue;
+			}
 			const hit = CATS.find(([k]) => k.startsWith(key) || key.startsWith(k));
 			if (hit) {
 				out.cat = hit[1];
@@ -209,6 +214,7 @@ export function parseCapture(text: string, ctx: ParseContext): Parsed {
 	if (out.mStart && out.mEnd) c.push({ l: 'Time', v: `${out.mStart}–${out.mEnd}` });
 	if (out.est) c.push({ l: 'Est', v: fmtDur(out.est) });
 	if (out.cat) c.push({ l: 'Cat', v: out.cat });
+	if (out.personal) c.push({ l: 'Scope', v: 'Personal' });
 	if (out.imp) c.push({ l: 'Pri', v: `P${out.imp}` });
 	if (out.start && out.start !== 'auto')
 		c.push({
@@ -222,6 +228,7 @@ export function parseCapture(text: string, ctx: ParseContext): Parsed {
 export const SYNTAX_REFERENCE: { token: string; meaning: string }[] = [
 	{ token: '!1 … !5', meaning: 'Priority' },
 	{ token: '#deep #study #admin #comms #review', meaning: 'Category' },
+	{ token: '#personal', meaning: 'Personal task (Pro)' },
 	{ token: '+Project_Name', meaning: 'Project, new if unknown' },
 	{ token: '@fri @16oct @+3 @eow @eom', meaning: 'Due date' },
 	{ token: '90m 1.5h 1h30', meaning: 'Estimate' },

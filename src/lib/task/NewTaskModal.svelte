@@ -54,6 +54,7 @@
 		fill('startDate', p.startDate);
 		fill('repeat', p.repeat);
 		if (p.quick) quick = true;
+		if (p.personal && workspace.tier.personal) fill('scope', 'personal');
 	});
 
 	function create(e?: Event) {

@@ -132,7 +132,7 @@
 						onclick={() => (selected = d)}
 						class="relative flex min-h-[120px] cursor-pointer flex-col gap-1 border-r border-b border-line p-2 {inMonth
 							? ''
-							: 'opacity-40'} {p.kind !== 'work' ? 'hatch' : ''} {dropOn === d
+							: 'opacity-40'} {p.kind === 'uni' || p.kind === 'off' ? 'hatch' : ''} {dropOn === d
 							? 'bg-accent/10'
 							: selected === d
 								? 'bg-sel'
@@ -145,6 +145,9 @@
 									? 'bg-accent text-accent-ink'
 									: ''}">{parseISO(d).getDate()}</span
 							>
+							{#if p.kind === 'personal'}<span
+									class="font-mono text-[9.5px] tracking-[0.1em] text-lilac">PERSONAL</span
+								>{/if}
 							{#if p.kind === 'uni'}<span class="font-mono text-[9.5px] tracking-[0.1em] text-lilac"
 									>UNI</span
 								>{/if}

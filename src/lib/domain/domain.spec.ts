@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, fmtDur, weekStart } from './dates.ts';
 import { parseCapture, parseDateWord, parseEstimate } from './parse.ts';
-import { buildPlan, dayCapacity, remainingMin } from './plan.ts';
+import { buildPlan, dayCapacity, isPersonalDay, remainingMin } from './plan.ts';
 import { forecast, mustDos, urgency } from './forecast.ts';
 import { defaultSettings, exampleWorkspace, newTask } from './seed.ts';
 import { projectStats } from './stats.ts';
@@ -185,5 +185,34 @@ describe('blocks that happened', () => {
 
 	it('counts time from earlier blocks of a split task', () => {
 		expect(remainingMin(newTask(1, TODAY, { estimateMin: 120, creditMin: 90 }))).toBe(30);
+	});
+});
+
+describe('personal tasks', () => {
+	const settings = {
+		...defaultSettings(TODAY),
+		pattern: {
+			...defaultSettings(TODAY).pattern,
+			4: { kind: 'personal', start: '10:00', end: '16:00' }
+		}
+	} as ReturnType<typeof defaultSettings>;
+
+	it('runs personal tasks only on Personal and non-working days', () => {
+		const t = newTask(1, TODAY, { id: 'p', scope: 'personal', estimateMin: 900 });
+		const blocks = buildPlan([t], [], settings, NOW).placed.p!.blocks;
+		for (const b of blocks) expect(isPersonalDay(settings, b.date)).toBe(true);
+		expect(blocks[0].date).toBe('2026-10-29'); // Thursday, set to Personal
+		expect(blocks[0].start).toBe(600);
+	});
+
+	it('never runs work tasks on those days', () => {
+		const t = newTask(1, TODAY, { id: 'w', estimateMin: 2000 });
+		for (const b of buildPlan([t], [], settings, NOW).placed.w!.blocks)
+			expect(isPersonalDay(settings, b.date)).toBe(false);
+	});
+
+	it('reads #personal in capture', () => {
+		const p = parseCapture('Book dentist #personal 30m', ctx);
+		expect(p).toMatchObject({ title: 'Book dentist', personal: true, est: 30 });
 	});
 });

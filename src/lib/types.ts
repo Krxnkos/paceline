@@ -1,7 +1,23 @@
 export type ISODate = string; // 'YYYY-MM-DD'
 export type HM = string; // 'HH:MM'
 
-export type Status = 'backlog' | 'next' | 'doing' | 'review' | 'done';
+/** A board column id. The built-ins are backlog, next, doing, review and done. */
+export type Status = string;
+export type TaskScope = 'work' | 'personal';
+
+export interface Column {
+	id: Status;
+	label: string;
+}
+
+export const LABEL_COLORS = ['ink', 'accent', 'ice', 'lilac', 'amber', 'flare'] as const;
+export type LabelColor = (typeof LABEL_COLORS)[number];
+
+export interface Label {
+	id: string;
+	name: string;
+	color: LabelColor;
+}
 export type Category = 'Deep Work' | 'Study' | 'Admin' | 'Comms' | 'Review';
 export type StartMode = 'auto' | 'asap' | 'date' | 'manual';
 export type Repeat = '' | 'daily' | 'weekly' | 'fortnightly' | 'monthly';
@@ -45,6 +61,9 @@ export interface Task {
 	history?: BlockSpan[];
 	/** Minutes of scheduled blocks already used, for tasks split across blocks. */
 	creditMin?: number;
+	/** Personal tasks only run on Personal and non-working days; work tasks never do. */
+	scope?: TaskScope;
+	labels?: string[];
 }
 
 export interface BlockSpan {
@@ -91,11 +110,22 @@ export interface Goal {
 export type DayPattern =
 	| { kind: 'work'; start: HM; end: HM; lunch?: [HM, HM] }
 	| { kind: 'uni'; otjHours: number }
+	| { kind: 'personal'; start: HM; end: HM }
 	| { kind: 'off' };
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0 = Sunday
 
-export type ThemeId = 'carbon' | 'chalk' | 'midnight' | 'frost' | 'ember' | 'sand';
+export type ThemeId =
+	| 'carbon'
+	| 'chalk'
+	| 'midnight'
+	| 'frost'
+	| 'ember'
+	| 'sand'
+	| 'harbor'
+	| 'orchid'
+	| 'gilt'
+	| 'terminal';
 export type ThemeChoice = ThemeId | 'system';
 
 export interface Settings {
@@ -142,6 +172,9 @@ export interface Workspace {
 	nextCode: number;
 	nextProjectCode: number;
 	onboarded: boolean;
+	/** Custom board columns and labels (Pro and Ultimate). */
+	columns?: Column[];
+	labels?: Label[];
 	active?: ActiveBlock | null;
 	/** A block that ended with its task unfinished, waiting on "Did you complete this?". */
 	awaiting?: ActiveBlock | null;

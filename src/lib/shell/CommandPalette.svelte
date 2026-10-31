@@ -100,7 +100,7 @@
 				icon: 'sun',
 				group: 'Actions',
 				run: () => {
-					const list = THEMES.filter((t) => workspace.tier.themes === 'all' || t.family === 'Volt');
+					const list = THEMES.filter((t) => workspace.themeAllowed(t));
 					const i = list.findIndex((t) => t.id === theme.resolved);
 					theme.set(list[(i + 1) % list.length].id);
 				}

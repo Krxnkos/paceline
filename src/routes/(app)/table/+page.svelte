@@ -13,7 +13,7 @@
 	import { code, forecast, urgency } from '#lib/domain/forecast.ts';
 	import { score } from '#lib/domain/plan.ts';
 	import { fmtDur } from '#lib/domain/dates.ts';
-	import { STATUSES, type Status, type Task } from '#lib/types.ts';
+	import type { Status, Task } from '#lib/types.ts';
 
 	type Key =
 		'code' | 'title' | 'status' | 'priority' | 'due' | 'forecast' | 'project' | 'estimate' | 'rank';
@@ -24,7 +24,7 @@
 	let group = $state<Group>('status');
 	let selected = $state<string[]>([]);
 
-	const statusOrder = Object.fromEntries(STATUSES.map((s, i) => [s.id, i]));
+	const statusOrder = $derived(Object.fromEntries(workspace.columns.map((s, i) => [s.id, i])));
 	const projName = (t: Task) => workspace.project(t.projectId)?.name ?? '';
 	const fcEnd = (t: Task) =>
 		workspace.plan.placed[t.id]?.endDate ?? (t.status === 'done' ? '0' : '9999');
@@ -64,7 +64,10 @@
 		if (group === 'none') return [{ key: 'all', label: 'All tasks', rows }];
 		const keyOf = (t: Task): [string, string] => {
 			if (group === 'status')
-				return [String(statusOrder[t.status]), STATUSES.find((s) => s.id === t.status)!.label];
+				return [
+					String(statusOrder[t.status]),
+					workspace.columns.find((s) => s.id === t.status)?.label ?? 'Other'
+				];
 			if (group === 'project') return [projName(t) || '~', projName(t) || 'No project'];
 			if (group === 'category') return [t.category, t.category];
 			const u = urgency(t, clock.today);
@@ -216,7 +219,7 @@
 							<td class="px-1">
 								<Select
 									value={t.status}
-									options={STATUSES.map((s) => ({ value: s.id, label: s.label }))}
+									options={workspace.columns.map((s) => ({ value: s.id, label: s.label }))}
 									aria-label="Status"
 									class={inline}
 									onchange={(e) => workspace.setStatus(t.id, e.currentTarget.value as Status)}
@@ -303,7 +306,7 @@
 				}}
 			>
 				<option value="">Move to…</option>
-				{#each STATUSES as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+				{#each workspace.columns as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
 			</select>
 			<select
 				class="bulk"
