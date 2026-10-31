@@ -34,7 +34,7 @@
 		if (!t) return;
 		// A theme from a lapsed plan falls back to the system default.
 		const known = THEMES.find((x) => x.id === t);
-		const want = !known || workspace.themeAllowed(known) ? t : 'system';
+		const want = known && workspace.themeAllowed(known) ? t : 'system';
 		if (want !== theme.choice) theme.set(want);
 	});
 
