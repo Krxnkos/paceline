@@ -17,7 +17,6 @@
 	import { projectStats } from '#lib/domain/stats.ts';
 	import { code, forecast, urgency } from '#lib/domain/forecast.ts';
 	import { fmtDur, fmtHours, fmtShort } from '#lib/domain/dates.ts';
-	import { STATUSES } from '#lib/types.ts';
 
 	const project = $derived(workspace.project(page.params.id));
 	const stats = $derived(project ? projectStats(project, workspace.tasks, workspace.plan) : null);
@@ -70,7 +69,7 @@
 			placeholder="Add to {project.name} · @fri 90m !2 #deep"
 		/>
 
-		{#each STATUSES as s (s.id)}
+		{#each workspace.columns as s (s.id)}
 			{@const list = tasks.filter((t) => t.status === s.id)}
 			{#if list.length}
 				<Panel title={s.label} meta={String(list.length).padStart(2, '0')}>

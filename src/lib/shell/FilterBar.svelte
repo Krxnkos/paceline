@@ -49,6 +49,17 @@
 		aria-label="Category"
 		class="w-40 [&_select]:h-9 [&_select]:text-[13px]"
 	/>
+	{#if workspace.labels.length}
+		<Select
+			bind:value={filters.label}
+			options={[
+				{ value: 'all', label: 'All labels' },
+				...workspace.labels.map((l) => ({ value: l.id, label: l.name }))
+			]}
+			aria-label="Label"
+			class="w-36 [&_select]:h-9 [&_select]:text-[13px]"
+		/>
+	{/if}
 	{#if showDoneToggle}
 		<Toggle label="Show done" checked={filters.showDone} onchange={(v) => (filters.showDone = v)} />
 	{/if}

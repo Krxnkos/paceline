@@ -42,7 +42,12 @@ export async function api<T = Record<string, unknown>>(
 		const data = (await res.json().catch(() => ({}))) as T & { message?: string };
 		return res.ok
 			? { ok: true, status: res.status, data }
-			: { ok: false, status: res.status, error: data?.message ?? 'Something went wrong.', data };
+			: {
+					ok: false,
+					status: res.status,
+					error: data?.message ?? `Something went wrong (HTTP ${res.status}).`,
+					data
+				};
 	} catch {
 		return { ok: false, status: 0, error: 'You’re offline. Check your connection and try again.' };
 	}

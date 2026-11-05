@@ -6,7 +6,7 @@
 	import UsernameGate from '#lib/auth/UsernameGate.svelte';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
-	import { theme } from '#lib/stores/theme.svelte.ts';
+	import { THEMES, theme } from '#lib/stores/theme.svelte.ts';
 	import { clock } from '#lib/stores/clock.svelte.ts';
 	import type { LayoutProps } from './$types';
 
@@ -31,7 +31,11 @@
 	// settings.theme follows the person; localStorage is only the pre-paint cache.
 	$effect(() => {
 		const t = workspace.data?.settings.theme;
-		if (t && t !== theme.choice) theme.set(t);
+		if (!t) return;
+		// A theme from a lapsed plan falls back to the system default.
+		const known = THEMES.find((x) => x.id === t);
+		const want = known && workspace.themeAllowed(known) ? t : 'system';
+		if (want !== theme.choice) theme.set(want);
 	});
 
 	// Each minute: fix the lit block, and notice when it ends.

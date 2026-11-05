@@ -176,6 +176,122 @@
 	--scrim: rgb(20 16 12 / 0.45);
 }
 
+/* Harbor · dark · Pro */
+[data-theme='harbor'] {
+	color-scheme: dark;
+	--canvas: #081418;
+	--panel: #0b1a1f;
+	--surface: #0f2228;
+	--raised: #15303a;
+	--hover: #18343c;
+	--sel: #1e3d47;
+	--line: #1c3a42;
+	--line-2: #275058;
+	--line-3: #36666e;
+	--ink: #e6f4f4;
+	--ink-2: #c4dedf;
+	--ink-3: #a5c9cb;
+	--muted: #7fa5a8;
+	--faint: #5f8488;
+	--accent: #4fd8d0;
+	--accent-hi: #84e8e2;
+	--accent-ink: #03201e;
+	--accent-text: #4fd8d0;
+	--flare: #ff8370;
+	--amber: #ffc861;
+	--ice: #8ccbff;
+	--lilac: #c7b8ff;
+	--signal-ink: #081418;
+	--scrim: rgb(2 6 8 / 0.72);
+}
+
+/* Orchid · dark · Pro */
+[data-theme='orchid'] {
+	color-scheme: dark;
+	--canvas: #120c18;
+	--panel: #181020;
+	--surface: #1e1528;
+	--raised: #271c33;
+	--hover: #2b2038;
+	--sel: #322640;
+	--line: #34273f;
+	--line-2: #463652;
+	--line-3: #5a4768;
+	--ink: #f4ecf8;
+	--ink-2: #dccfe4;
+	--ink-3: #c5b4cf;
+	--muted: #a493b4;
+	--faint: #84739a;
+	--accent: #e879c9;
+	--accent-hi: #f2a5dd;
+	--accent-ink: #2a0620;
+	--accent-text: #e879c9;
+	--flare: #ff7f8e;
+	--amber: #f5c95f;
+	--ice: #8fc8ff;
+	--lilac: #c7b2ff;
+	--signal-ink: #120c18;
+	--scrim: rgb(2 6 8 / 0.72);
+}
+
+/* Gilt · dark · Ultimate */
+[data-theme='gilt'] {
+	color-scheme: dark;
+	--canvas: #0d0b06;
+	--panel: #131009;
+	--surface: #1a160c;
+	--raised: #231e11;
+	--hover: #272113;
+	--sel: #2e2717;
+	--line: #352d18;
+	--line-2: #4a3f22;
+	--line-3: #5f5230;
+	--ink: #f7f0dc;
+	--ink-2: #e0d6bb;
+	--ink-3: #c8bc9c;
+	--muted: #a89a78;
+	--faint: #877a5b;
+	--accent: #e8c14a;
+	--accent-hi: #f2d67f;
+	--accent-ink: #1e1602;
+	--accent-text: #e8c14a;
+	--flare: #ff7a5c;
+	--amber: #f0a63c;
+	--ice: #8fc6ee;
+	--lilac: #c9b5f5;
+	--signal-ink: #0d0b06;
+	--scrim: rgb(2 6 8 / 0.72);
+}
+
+/* Terminal · dark · Developer */
+[data-theme='terminal'] {
+	color-scheme: dark;
+	--canvas: #020604;
+	--panel: #050c08;
+	--surface: #07110b;
+	--raised: #0c1a12;
+	--hover: #0f2016;
+	--sel: #13281c;
+	--line: #123022;
+	--line-2: #1b4530;
+	--line-3: #285c40;
+	--ink: #b8f7cc;
+	--ink-2: #9be2b2;
+	--ink-3: #80cb99;
+	--muted: #5fa67c;
+	--faint: #467f5d;
+	--accent: #39ff88;
+	--accent-hi: #7cffb0;
+	--accent-ink: #00190a;
+	--accent-text: #39ff88;
+	--flare: #ff6b5e;
+	--amber: #f2d24a;
+	--ice: #62c8ff;
+	--lilac: #c2a8ff;
+	--signal-ink: #020604;
+	--scrim: rgb(2 6 8 / 0.72);
+}
+
 @import 'tailwindcss';
 
 @theme inline {

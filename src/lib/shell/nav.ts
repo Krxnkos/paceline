@@ -118,10 +118,10 @@ export const SETTINGS_NAV: NavEntry = {
 
 export const CONSOLE_NAV: NavEntry = {
 	href: '/console',
-	label: 'Console',
+	label: 'Developer',
 	icon: 'terminal',
 	index: '12',
-	sub: 'Developer commands',
+	sub: 'Accounts, commands and diagnostics',
 	key: ''
 };
 

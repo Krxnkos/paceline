@@ -6,9 +6,14 @@ class Filters {
 	project = $state<string>('all'); // 'all' | 'none' | projectId
 	category = $state<Category | 'all'>('all');
 	showDone = $state(true);
+	label = $state<string>('all');
 
 	active = $derived(
-		this.q !== '' || this.project !== 'all' || this.category !== 'all' || !this.showDone
+		this.q !== '' ||
+			this.project !== 'all' ||
+			this.category !== 'all' ||
+			this.label !== 'all' ||
+			!this.showDone
 	);
 
 	match = (t: Task): boolean => {
@@ -17,6 +22,7 @@ class Filters {
 		if (this.project !== 'all' && this.project !== 'none' && t.projectId !== this.project)
 			return false;
 		if (this.category !== 'all' && t.category !== this.category) return false;
+		if (this.label !== 'all' && !t.labels?.includes(this.label)) return false;
 		if (this.q) {
 			const q = this.q.toLowerCase();
 			const hay = `${t.title} ${t.notes ?? ''} T-${String(t.code).padStart(3, '0')}`.toLowerCase();
@@ -29,6 +35,7 @@ class Filters {
 		this.q = '';
 		this.project = 'all';
 		this.category = 'all';
+		this.label = 'all';
 		this.showDone = true;
 	}
 }

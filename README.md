@@ -163,6 +163,16 @@ from the console.
 
 Project and goal limits are enforced on the server. Theme, Timeline, forecast length and export gates are in the app.
 
+## Personal time (Pro and Ultimate)
+
+Set a day to **Personal** under Settings ▸ Working pattern, then mark a task's Type as Personal (or add `#personal`
+when capturing). Personal tasks run only on Personal days and non-working days (09:00–18:00); work tasks never do.
+
+## Custom board (Pro and Ultimate)
+
+**Customise** on the Board adds, renames, reorders and deletes columns, and manages coloured labels. Backlog,
+In progress and Done can be renamed but not deleted. Labels can be filtered on the Board, Table, Timeline and Calendar.
+
 ## Local development
 
 `npm run dev` needs nothing else: it uses an in-memory MongoDB and shows email codes on screen. To use a real

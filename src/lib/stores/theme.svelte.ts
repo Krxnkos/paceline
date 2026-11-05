@@ -3,6 +3,7 @@ import type { ThemeChoice, ThemeId } from '../types.ts';
 export const THEMES = [
 	{
 		id: 'carbon',
+		access: 'free',
 		label: 'Carbon',
 		mode: 'dark',
 		family: 'Volt',
@@ -15,6 +16,7 @@ export const THEMES = [
 	},
 	{
 		id: 'chalk',
+		access: 'free',
 		label: 'Chalk',
 		mode: 'light',
 		family: 'Volt',
@@ -27,6 +29,7 @@ export const THEMES = [
 	},
 	{
 		id: 'midnight',
+		access: 'pro',
 		label: 'Midnight',
 		mode: 'dark',
 		family: 'Mint',
@@ -39,6 +42,7 @@ export const THEMES = [
 	},
 	{
 		id: 'frost',
+		access: 'pro',
 		label: 'Frost',
 		mode: 'light',
 		family: 'Mint',
@@ -51,6 +55,7 @@ export const THEMES = [
 	},
 	{
 		id: 'ember',
+		access: 'pro',
 		label: 'Ember',
 		mode: 'dark',
 		family: 'Ember',
@@ -63,6 +68,7 @@ export const THEMES = [
 	},
 	{
 		id: 'sand',
+		access: 'pro',
 		label: 'Sand',
 		mode: 'light',
 		family: 'Ember',
@@ -72,6 +78,58 @@ export const THEMES = [
 		ink: '#17110B',
 		muted: '#6B5B4C',
 		accent: '#FF8A1F'
+	},
+	{
+		id: 'harbor',
+		access: 'pro',
+		label: 'Harbor',
+		mode: 'dark',
+		family: 'Tide',
+		canvas: '#081418',
+		surface: '#0F2228',
+		line: '#1C3A42',
+		ink: '#E6F4F4',
+		muted: '#7FA5A8',
+		accent: '#4FD8D0'
+	},
+	{
+		id: 'orchid',
+		access: 'pro',
+		label: 'Orchid',
+		mode: 'dark',
+		family: 'Bloom',
+		canvas: '#120C18',
+		surface: '#1E1528',
+		line: '#34273F',
+		ink: '#F4ECF8',
+		muted: '#A493B4',
+		accent: '#E879C9'
+	},
+	{
+		id: 'gilt',
+		access: 'ultimate',
+		label: 'Gilt',
+		mode: 'dark',
+		family: 'Gold',
+		canvas: '#0D0B06',
+		surface: '#1A160C',
+		line: '#352D18',
+		ink: '#F7F0DC',
+		muted: '#A89A78',
+		accent: '#E8C14A'
+	},
+	{
+		id: 'terminal',
+		access: 'developer',
+		label: 'Terminal',
+		mode: 'dark',
+		family: 'Developer',
+		canvas: '#020604',
+		surface: '#07110B',
+		line: '#123022',
+		ink: '#B8F7CC',
+		muted: '#5FA67C',
+		accent: '#39FF88'
 	}
 ] as const;
 
@@ -82,7 +140,11 @@ export const PAIR: Record<ThemeId, ThemeId> = {
 	midnight: 'frost',
 	frost: 'midnight',
 	ember: 'sand',
-	sand: 'ember'
+	sand: 'ember',
+	harbor: 'frost',
+	orchid: 'chalk',
+	gilt: 'chalk',
+	terminal: 'chalk'
 };
 
 const IDS = THEMES.map((t) => t.id) as readonly string[];

@@ -10,14 +10,18 @@
 	import { score } from '#lib/domain/plan.ts';
 	import { fmtDur } from '#lib/domain/dates.ts';
 	import { catBorder } from '#lib/ui/styles.ts';
-	import { STATUSES, type Status, type Task } from '#lib/types.ts';
+	import BoardSetup from '#lib/task/BoardSetup.svelte';
+	import { labelCls } from '#lib/ui/styles.ts';
+	import type { Status, Task } from '#lib/types.ts';
 
 	let proj = $state<string>('all');
+	let labelFilter = $state<string>('all');
+	let setup = $state(false);
 	let showAllDone = $state(false);
 	let dragId = $state<string | null>(null);
 	let over = $state<Status | null>(null);
 
-	const notes: Record<Status, string> = {
+	const notes: Record<string, string> = {
 		backlog: 'Ranked by priority',
 		next: 'Planner picks from here',
 		doing: '',
@@ -27,7 +31,10 @@
 
 	const visible = $derived(
 		workspace.tasks.filter(
-			(t) => !t.inbox && (proj === 'all' || (proj === 'none' ? !t.projectId : t.projectId === proj))
+			(t) =>
+				(labelFilter === 'all' || !!t.labels?.includes(labelFilter)) &&
+				!t.inbox &&
+				(proj === 'all' || (proj === 'none' ? !t.projectId : t.projectId === proj))
 		)
 	);
 	const ranks = $derived(
@@ -43,7 +50,7 @@
 		return b?.taskId ?? null;
 	});
 	const lanes = $derived(
-		STATUSES.map((s) => {
+		workspace.columns.map((s) => {
 			let cards = visible.filter((t) => t.status === s.id);
 			if (s.id === 'done')
 				cards = cards.sort((a, b) => (b.doneAt ?? '').localeCompare(a.doneAt ?? ''));
@@ -56,15 +63,16 @@
 	);
 
 	function move(t: Task, dir: -1 | 1) {
-		const i = STATUSES.findIndex((s) => s.id === t.status);
-		const next = STATUSES[Math.max(0, Math.min(STATUSES.length - 1, i + dir))];
+		const cols = workspace.columns;
+		const next =
+			cols[Math.max(0, Math.min(cols.length - 1, cols.findIndex((s) => s.id === t.status) + dir))];
 		setStatus(t, next.id);
 	}
 
 	function setStatus(t: Task, status: Status) {
 		if (t.status === status) return;
 		workspace.setStatus(t.id, status);
-		const label = STATUSES.find((s) => s.id === status)!.label;
+		const label = workspace.columns.find((s) => s.id === status)?.label ?? status;
 		if (status !== 'done')
 			toast(`${code(t.code)} moved to ${label} · schedule re-planned`, {
 				action: 'Undo',
@@ -106,11 +114,34 @@
 					>
 				{/each}
 			</div>
+			{#if workspace.labels.length}
+				<select
+					bind:value={labelFilter}
+					aria-label="Filter by label"
+					class="h-10 border border-line-3 bg-transparent px-2 text-[13px] font-bold text-ink-2"
+				>
+					<option value="all">All labels</option>
+					{#each workspace.labels as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
+				</select>
+			{/if}
+			<button
+				type="button"
+				onclick={() =>
+					workspace.tier.customBoard
+						? (setup = true)
+						: toast('Custom columns and labels are included in Pro.', { tone: 'err' })}
+				class="inline-flex h-10 items-center gap-2 border border-line-3 px-3.5 text-[13px] font-bold text-ink-2 hover:text-ink"
+				><Icon name="edit" size={14} />Customise{workspace.tier.customBoard ? '' : ' · Pro'}</button
+			>
 		{/snippet}
 	</PageHead>
+	<BoardSetup bind:open={setup} />
 
 	<div class="overflow-x-auto">
-		<div class="grid min-w-[1040px] grid-cols-5 items-start gap-3">
+		<div
+			class="grid items-start gap-3"
+			style="grid-template-columns: repeat({lanes.length}, minmax(208px, 1fr))"
+		>
 			{#each lanes as lane (lane.id)}
 				<section
 					aria-label={lane.label}
@@ -192,6 +223,20 @@
 									? 'text-muted line-through'
 									: 'text-ink'}">{t.title}</button
 							>
+							{#if t.labels?.length}
+								<div class="flex flex-wrap gap-1">
+									{#each workspace.labels.filter((l) => t.labels?.includes(l.id)) as l (l.id)}
+										<span class="border px-1.5 py-px text-[11px] font-semibold {labelCls[l.color]}"
+											>{l.name}</span
+										>
+									{/each}
+								</div>
+							{/if}
+							{#if t.scope === 'personal'}
+								<span class="font-mono text-[10px] tracking-[0.08em] text-lilac uppercase"
+									>Personal</span
+								>
+							{/if}
 							{#if waits.length && !done}
 								<span class="font-mono text-[10px] text-flare uppercase"
 									>Waits on {waits.map((w) => code(w.code)).join(', ')}</span
@@ -209,7 +254,7 @@
 									<button
 										type="button"
 										onclick={() => move(t, -1)}
-										disabled={t.status === 'backlog'}
+										disabled={t.status === workspace.columns[0].id}
 										aria-label="Move {t.title} left"
 										class="inline-flex size-8 items-center justify-center border border-line-3 text-ink hover:bg-hover disabled:opacity-30"
 										><Icon name="chevronLeft" size={14} /></button
@@ -217,7 +262,7 @@
 									<button
 										type="button"
 										onclick={() => move(t, 1)}
-										disabled={done}
+										disabled={t.status === workspace.columns.at(-1)?.id}
 										aria-label="Move {t.title} right"
 										class="inline-flex size-8 items-center justify-center border border-line-3 text-ink hover:bg-hover disabled:opacity-30"
 										><Icon name="chevronRight" size={14} /></button

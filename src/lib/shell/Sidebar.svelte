@@ -34,8 +34,7 @@
 	);
 
 	function cycleTheme() {
-		const list =
-			workspace.tier.themes === 'all' ? THEMES.map((t) => t.id) : (['carbon', 'chalk'] as const);
+		const list = THEMES.filter((t) => workspace.themeAllowed(t)).map((t) => t.id);
 		const next = list[(list.findIndex((t) => t === theme.resolved) + 1) % list.length];
 		theme.set(next);
 		workspace.updateSettings({ theme: next });

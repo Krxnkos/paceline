@@ -6,12 +6,12 @@
 	import { toast } from '../stores/toast.svelte.ts';
 
 	// Each preview is drawn from fixed hex values so every card shows its own theme.
-	const locked = (t: (typeof THEMES)[number]) =>
-		workspace.tier.themes !== 'all' && t.family !== 'Volt';
+	const locked = (t: (typeof THEMES)[number]) => !workspace.themeAllowed(t);
+	const lockName = { free: '', pro: 'Pro', ultimate: 'Ultimate', developer: 'Developer' };
 
 	function pick(choice: ThemeChoice) {
 		const t = THEMES.find((x) => x.id === choice);
-		if (t && locked(t)) return toast(`${t.label} is a Pro theme.`, { tone: 'err' });
+		if (t && locked(t)) return toast(`${t.label} needs ${lockName[t.access]}.`, { tone: 'err' });
 		theme.set(choice);
 		if (workspace.data) workspace.updateSettings({ theme: choice });
 	}
@@ -71,7 +71,7 @@
 				<span class="flex flex-col px-0.5">
 					<span class="text-[13.5px] font-bold text-ink">{t.label}</span>
 					<span class="font-mono text-[10px] tracking-[0.1em] text-muted uppercase"
-						>{locked(t) ? 'Pro' : `${t.mode} · ${t.family}`}</span
+						>{locked(t) ? lockName[t.access] : `${t.mode} · ${t.family}`}</span
 					>
 				</span>
 			</button>
@@ -90,7 +90,10 @@
 				if (m === 'system') return pick('system');
 				const cur = theme.resolved;
 				const fam = THEMES.find((t) => t.id === cur)!.family;
-				pick(THEMES.find((t) => t.family === fam && t.mode === m)!.id);
+				pick(
+					THEMES.find((t) => t.family === fam && t.mode === m)?.id ??
+						(m === 'dark' ? 'carbon' : 'chalk')
+				);
 			}}
 		/>
 		<span class="text-[13px] text-muted"

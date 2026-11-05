@@ -35,7 +35,7 @@
 	}
 </script>
 
-<Panel title="Developer" meta="Debug tools">
+<Panel title="Debug tools">
 	<div class="flex flex-col gap-4 p-[18px]">
 		<div class="flex flex-wrap gap-2.5">
 			<Button onclick={ping}>Ping server</Button>
@@ -63,6 +63,6 @@
 			<Button onclick={() => clock.travel(null)}>Real time</Button>
 		</div>
 		<pre
-			class="m-0 max-h-80 overflow-auto border border-line bg-panel p-3 font-mono text-[11px] leading-relaxed text-ink-2">{text}</pre>
+			class="m-0 max-h-72 overflow-auto border border-line bg-panel p-3 font-mono text-[11px] leading-relaxed text-ink-2">{text}</pre>
 	</div>
 </Panel>

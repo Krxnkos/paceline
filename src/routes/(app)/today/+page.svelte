@@ -39,11 +39,13 @@
 	const eyebrow = $derived(
 		pattern.kind === 'work'
 			? `Work day · ${pattern.start}–${pattern.end} · ${fmtHours(capacity)} h plannable`
-			: pattern.kind === 'uni'
-				? `University day · off-the-job ${pattern.otjHours} h`
-				: s.leave.includes(today)
-					? 'On leave · nothing planned'
-					: 'Day off · nothing planned'
+			: pattern.kind === 'personal'
+				? `Personal day · ${pattern.start}–${pattern.end}`
+				: pattern.kind === 'uni'
+					? `University day · off-the-job ${pattern.otjHours} h`
+					: s.leave.includes(today)
+						? 'On leave · nothing planned'
+						: 'Day off · nothing planned'
 	);
 
 	const open = $derived(workspace.tasks.filter((t) => t.status !== 'done'));

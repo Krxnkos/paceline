@@ -6,7 +6,9 @@ export interface TierInfo {
 	label: string;
 	projects: number;
 	goals: number;
-	themes: 'basic' | 'all';
+	themeLevel: 0 | 1 | 2;
+	personal: boolean;
+	customBoard: boolean;
 	insightWeeks: number;
 	timeline: boolean;
 	dataTools: boolean;
@@ -19,7 +21,9 @@ export const TIERS: Record<Tier, TierInfo> = {
 		label: 'Free',
 		projects: 5,
 		goals: 3,
-		themes: 'basic',
+		themeLevel: 0,
+		personal: false,
+		customBoard: false,
 		insightWeeks: 4,
 		timeline: false,
 		dataTools: false,
@@ -30,22 +34,37 @@ export const TIERS: Record<Tier, TierInfo> = {
 		label: 'Pro',
 		projects: Infinity,
 		goals: Infinity,
-		themes: 'all',
+		themeLevel: 1,
+		personal: true,
+		customBoard: true,
 		insightWeeks: 12,
 		timeline: true,
 		dataTools: false,
-		perks: ['Unlimited projects and goals', 'All six themes', '12-week forecast', 'Timeline view']
+		perks: [
+			'Unlimited projects and goals',
+			'Personal days and tasks',
+			'Custom board columns and labels',
+			'Eight themes',
+			'12-week forecast and Timeline'
+		]
 	},
 	ultimate: {
 		id: 'ultimate',
 		label: 'Ultimate',
 		projects: Infinity,
 		goals: Infinity,
-		themes: 'all',
+		themeLevel: 2,
+		personal: true,
+		customBoard: true,
 		insightWeeks: 26,
 		timeline: true,
 		dataTools: true,
-		perks: ['Everything in Pro', '26-week forecast', 'JSON export and import']
+		perks: [
+			'Everything in Pro',
+			'Exclusive Gilt theme',
+			'26-week forecast',
+			'JSON export and import'
+		]
 	}
 };
 

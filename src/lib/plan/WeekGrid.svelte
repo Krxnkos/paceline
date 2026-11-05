@@ -27,7 +27,7 @@
 		let b = 17 * 60;
 		for (const d of days) {
 			const p = patternFor(s, d);
-			if (p.kind === 'work') {
+			if (p.kind === 'work' || p.kind === 'personal') {
 				a = Math.min(a, hmToMin(p.start) - 15);
 				b = Math.max(b, hmToMin(p.end) + 15);
 			}
@@ -99,13 +99,15 @@
 		const cap = dayCapacity(s, workspace.meetings, d);
 		const booked = bookedMin(workspace.plan, d);
 		const isToday = d === clock.today;
-		const label = `${DOW_SHORT[dow(d)].toUpperCase()}${isToday ? ' · TODAY' : p.kind === 'uni' ? ' · UNIVERSITY' : s.leave.includes(d) ? ' · LEAVE' : p.kind === 'off' ? ' · OFF' : p.kind === 'work' && hmToMin(p.end) - hmToMin(p.start) < 360 ? ' · HALF' : ''}`;
+		const label = `${DOW_SHORT[dow(d)].toUpperCase()}${isToday ? ' · TODAY' : p.kind === 'personal' ? ' · PERSONAL' : p.kind === 'uni' ? ' · UNIVERSITY' : s.leave.includes(d) ? ' · LEAVE' : p.kind === 'off' ? ' · OFF' : p.kind === 'work' && hmToMin(p.end) - hmToMin(p.start) < 360 ? ' · HALF' : ''}`;
 		const meta =
-			p.kind === 'uni'
-				? `OTJ ${p.otjHours} H`
-				: p.kind === 'off'
-					? '—'
-					: `${fmtHours(booked)} / ${fmtHours(cap)} H${cap && booked >= cap ? ' · FULL' : ''}`;
+			p.kind === 'personal'
+				? `${fmtHours(booked)} H PERSONAL`
+				: p.kind === 'uni'
+					? `OTJ ${p.otjHours} H`
+					: p.kind === 'off'
+						? '—'
+						: `${fmtHours(booked)} / ${fmtHours(cap)} H${cap && booked >= cap ? ' · FULL' : ''}`;
 		return { p, label, meta, full: cap > 0 && booked >= cap, isToday };
 	}
 </script>
@@ -126,12 +128,14 @@
 				<span
 					class="font-mono text-[10px] tracking-[0.14em] {h.isToday
 						? 'text-accent-text'
-						: h.p.kind === 'uni'
+						: h.p.kind === 'uni' || h.p.kind === 'personal'
 							? 'text-lilac'
 							: 'text-muted'}">{h.label}</span
 				>
-				<span class="text-xl font-extrabold wide {h.p.kind !== 'work' ? 'text-muted' : ''}"
-					>{parseISO(d).getDate()}</span
+				<span
+					class="text-xl font-extrabold wide {h.p.kind === 'uni' || h.p.kind === 'off'
+						? 'text-muted'
+						: ''}">{parseISO(d).getDate()}</span
 				>
 				<span class="font-mono text-[10px] {h.full ? 'text-amber' : 'text-muted'}">{h.meta}</span>
 			</div>
@@ -152,7 +156,7 @@
 			<div
 				class="relative {i < days.length - 1 ? 'border-r border-line' : ''} {h.isToday
 					? 'bg-panel'
-					: ''} {h.p.kind !== 'work' ? 'hatch' : ''}"
+					: ''} {h.p.kind === 'uni' || (h.p.kind === 'off' && !items.length) ? 'hatch' : ''}"
 				style="height: {height}px"
 			>
 				{#each hours as m (m)}
@@ -173,7 +177,7 @@
 					{#if d < clock.today}
 						<div class="absolute inset-0 bg-canvas/30"></div>
 					{/if}
-				{:else}
+				{:else if h.p.kind === 'uni' || (h.p.kind === 'off' && !items.length)}
 					<div class="absolute inset-x-3 top-[35%] flex flex-col items-start gap-1.5">
 						<span
 							class="bg-canvas px-1.5 py-1 font-mono text-[10px] tracking-[0.14em] {h.p.kind ===

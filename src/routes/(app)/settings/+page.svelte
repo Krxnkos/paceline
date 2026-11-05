@@ -8,7 +8,6 @@
 	import ConfirmButton from '#lib/ui/ConfirmButton.svelte';
 	import ThemePicker from '#lib/ui/ThemePicker.svelte';
 	import PlanBadge from '#lib/ui/PlanBadge.svelte';
-	import DeveloperPanel from '#lib/shell/DeveloperPanel.svelte';
 	import { TIERS } from '#lib/tiers.ts';
 	import Icon from '#lib/ui/Icon.svelte';
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
@@ -33,6 +32,7 @@
 		if (kind === 'work')
 			setPattern(d, { kind: 'work', start: '09:00', end: '17:00', lunch: ['12:00', '12:30'] });
 		else if (kind === 'uni') setPattern(d, { kind: 'uni', otjHours: 7.5 });
+		else if (kind === 'personal') setPattern(d, { kind: 'personal', start: '09:00', end: '18:00' });
 		else setPattern(d, { kind: 'off' });
 	}
 
@@ -91,6 +91,11 @@
 						options={[
 							{ value: 'work', label: 'Work day' },
 							{ value: 'uni', label: 'University' },
+							{
+								value: 'personal',
+								label: workspace.tier.personal ? 'Personal' : 'Personal · Pro',
+								disabled: !workspace.tier.personal
+							},
 							{ value: 'off', label: 'Day off' }
 						]}
 						onchange={(e) => setKind(d, e.currentTarget.value as DayPattern['kind'])}
@@ -140,6 +145,28 @@
 									p.lunch && setPattern(d, { ...p, lunch: [p.lunch[0], e.currentTarget.value] })}
 							/></label
 						>
+					{:else if p.kind === 'personal'}
+						<label class="flex items-center gap-2 font-mono text-[11px] text-muted"
+							>FROM
+							<input
+								type="time"
+								step="300"
+								value={p.start}
+								class="{input} w-28 font-mono text-[13px]"
+								onchange={(e) => setPattern(d, { ...p, start: e.currentTarget.value })}
+							/></label
+						>
+						<label class="flex items-center gap-2 font-mono text-[11px] text-muted"
+							>TO
+							<input
+								type="time"
+								step="300"
+								value={p.end}
+								class="{input} w-28 font-mono text-[13px]"
+								onchange={(e) => setPattern(d, { ...p, end: e.currentTarget.value })}
+							/></label
+						>
+						<span class="text-[13px] text-muted">Personal tasks only</span>
 					{:else if p.kind === 'uni'}
 						<label class="flex items-center gap-2 font-mono text-[11px] text-muted"
 							>OFF-THE-JOB HOURS
@@ -369,8 +396,6 @@
 			{/each}
 		</div>
 	</Panel>
-
-	{#if auth.user?.developer}<DeveloperPanel />{/if}
 
 	<Panel title="Account">
 		<div class="flex flex-col gap-4 p-[18px]">
