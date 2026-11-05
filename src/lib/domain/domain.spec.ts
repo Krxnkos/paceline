@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, fmtDur, weekStart } from './dates.ts';
 import { parseCapture, parseDateWord, parseEstimate } from './parse.ts';
-import { buildPlan, dayCapacity, isPersonalDay, remainingMin } from './plan.ts';
-import { forecast, mustDos, urgency } from './forecast.ts';
+import { buildPlan, dayCapacity, isPersonalDay, remainingMin, reservedSlots } from './plan.ts';
+import { blockers, forecast, mustDos, urgency } from './forecast.ts';
 import { defaultSettings, exampleWorkspace, newTask } from './seed.ts';
-import { projectStats } from './stats.ts';
+import { dailyFocus, projectStats } from './stats.ts';
 
 // Wednesday 28 October 2026, 10:19
 const NOW = new Date(2026, 9, 28, 10, 19);
@@ -78,7 +78,7 @@ describe('parse', () => {
 });
 
 describe('plan', () => {
-	const settings = defaultSettings(TODAY);
+	const settings = defaultSettings();
 
 	it('keeps the buffer free', () => {
 		// Wednesday: 07:45–16:45 less 30 min lunch = 510 min; 20% buffer → 408.
@@ -137,7 +137,7 @@ describe('forecast', () => {
 
 	it('flags late forecasts', () => {
 		const t = newTask(1, TODAY, { estimateMin: 1200, due: addDays(TODAY, 1) });
-		const plan = buildPlan([t], [], defaultSettings(TODAY), NOW);
+		const plan = buildPlan([t], [], defaultSettings(), NOW);
 		expect(forecast(t, plan)?.tone).toBe('late');
 	});
 });
@@ -162,7 +162,7 @@ describe('example workspace', () => {
 });
 
 describe('blocks that happened', () => {
-	const settings = defaultSettings(TODAY);
+	const settings = defaultSettings();
 
 	it('keeps a lit block fixed and counts it towards the task', () => {
 		const t = newTask(1, TODAY, { id: 'a', estimateMin: 90 });
@@ -190,9 +190,9 @@ describe('blocks that happened', () => {
 
 describe('personal tasks', () => {
 	const settings = {
-		...defaultSettings(TODAY),
+		...defaultSettings(),
 		pattern: {
-			...defaultSettings(TODAY).pattern,
+			...defaultSettings().pattern,
 			4: { kind: 'personal', start: '10:00', end: '16:00' }
 		}
 	} as ReturnType<typeof defaultSettings>;
@@ -214,5 +214,109 @@ describe('personal tasks', () => {
 	it('reads #personal in capture', () => {
 		const p = parseCapture('Book dentist #personal 30m', ctx);
 		expect(p).toMatchObject({ title: 'Book dentist', personal: true, est: 30 });
+	});
+});
+
+describe('reserved time', () => {
+	const settings = {
+		...defaultSettings(),
+		reserved: [
+			{
+				id: 'r1',
+				label: 'Admin',
+				category: 'Admin' as const,
+				start: 'start' as const,
+				minutes: 20,
+				days: [1, 2, 3, 4, 5] as (0 | 1 | 2 | 3 | 4 | 5 | 6)[]
+			}
+		]
+	};
+	const TOMORROW = '2026-10-29';
+
+	it('sits at the start of each work day, not on University days', () => {
+		expect(reservedSlots(settings, TOMORROW)).toEqual([
+			{ id: 'r1', label: 'Admin', category: 'Admin', start: 465, end: 485 }
+		]);
+		expect(reservedSlots(settings, '2026-11-03')).toEqual([]); // Tuesday: University
+	});
+
+	it('is filled by its category first and kept from everything else', () => {
+		const admin = newTask(1, TODAY, { category: 'Admin', estimateMin: 20, title: 'Inbox zero' });
+		const deep = newTask(2, TODAY, { estimateMin: 600, priority: 1, title: 'Deep' });
+		const plan = buildPlan([admin, deep], [], settings, NOW);
+		expect(plan.placed[admin.id]!.blocks[0]).toMatchObject({
+			date: TOMORROW,
+			start: 465,
+			end: 485
+		});
+		for (const b of plan.blocks.filter((x) => x.taskId === deep.id))
+			expect(b.date === TOMORROW && b.start < 485 && b.end > 465).toBe(false);
+	});
+
+	it('counts towards the day’s plannable time', () => {
+		expect(dayCapacity(settings, [], TOMORROW)).toBe(Math.round(490 * 0.8) + 20);
+	});
+});
+
+describe('dragged blocks', () => {
+	const settings = defaultSettings();
+
+	it('stay where they were dropped and push other work aside', () => {
+		const a = newTask(1, TODAY, { estimateMin: 60, priority: 1, title: 'A' });
+		const b = newTask(2, TODAY, {
+			estimateMin: 60,
+			priority: 5,
+			title: 'B',
+			fixed: { date: TODAY, start: 10 * 60 + 30 }
+		});
+		const plan = buildPlan([a, b], [], settings, NOW);
+		expect(plan.placed[b.id]!.blocks).toEqual([
+			{ taskId: b.id, date: TODAY, start: 630, end: 690 }
+		]);
+		for (const x of plan.placed[a.id]!.blocks) expect(x.start >= 690 || x.end <= 630).toBe(true);
+	});
+
+	it('are ignored once their day has passed', () => {
+		const b = newTask(1, TODAY, { estimateMin: 30, fixed: { date: '2026-10-26', start: 600 } });
+		const plan = buildPlan([b], [], settings, NOW);
+		expect(plan.placed[b.id]!.blocks[0].date >= TODAY).toBe(true);
+	});
+});
+
+describe('sub-task dependencies', () => {
+	const settings = defaultSettings();
+	const parent = newTask(1, TODAY, {
+		title: 'Parent',
+		subtasks: [
+			{ id: 's1', title: 'Get quote', done: false },
+			{ id: 's2', title: 'Order parts', done: false }
+		]
+	});
+	const child = newTask(2, TODAY, { title: 'Child', deps: [`${parent.id}:s1`] });
+
+	it('blocks until that sub-task is ticked', () => {
+		expect(blockers(child, [parent, child]).map((b) => b.ref)).toEqual(['T-001 › Get quote']);
+		expect(buildPlan([parent, child], [], settings, NOW).placed[child.id]).toBeNull();
+	});
+
+	it('frees the task once ticked, whatever the rest of the parent', () => {
+		const ticked = {
+			...parent,
+			subtasks: parent.subtasks.map((x) => ({ ...x, done: x.id === 's1' }))
+		};
+		expect(blockers(child, [ticked, child])).toEqual([]);
+		expect(buildPlan([ticked, child], [], settings, NOW).placed[child.id]).not.toBeNull();
+	});
+});
+
+describe('daily focus', () => {
+	it('adds up logged minutes per day, including empty days', () => {
+		const t = newTask(1, TODAY, {
+			log: [
+				{ date: '2026-10-26', minutes: 30 },
+				{ date: TODAY, minutes: 45 }
+			]
+		});
+		expect(dailyFocus([t], '2026-10-26', TODAY).map((d) => d.minutes)).toEqual([30, 0, 45]);
 	});
 });

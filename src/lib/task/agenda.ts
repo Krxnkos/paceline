@@ -1,7 +1,8 @@
-import type { ActiveBlock, ISODate, Meeting, Plan, Settings, Task } from '../types.ts';
+import type { ActiveBlock, Category, ISODate, Meeting, Plan, Settings, Task } from '../types.ts';
 import { hmToMin, patternFor } from '../domain/dates.ts';
+import { reservedSlots } from '../domain/plan.ts';
 
-export type AgendaKind = 'block' | 'meeting' | 'lunch';
+export type AgendaKind = 'block' | 'meeting' | 'lunch' | 'reserved';
 export type AgendaState = 'past' | 'now' | 'future';
 
 export interface AgendaItem {
@@ -19,6 +20,10 @@ export interface AgendaItem {
 	done?: boolean;
 	/** Ended unfinished and waiting on "Did you complete this?". */
 	confirm?: boolean;
+	/** Dragged to this time by hand. */
+	fixed?: boolean;
+	/** Reserved time: the category it's kept for. */
+	category?: Category;
 }
 
 /** Everything on a day in time order: planned blocks, meetings and lunch. */
@@ -66,7 +71,8 @@ export function agendaFor(
 			end: b.end,
 			title: t.title,
 			task: t,
-			pinned: t.start === 'date' || t.start === 'asap',
+			pinned: t.start === 'date' || t.start === 'asap' || !!t.fixed,
+			fixed: t.fixed?.date === date && t.fixed.start === b.start,
 			state: state(b.start, b.end)
 		});
 	}
@@ -84,6 +90,17 @@ export function agendaFor(
 			state: state(s, e)
 		});
 	}
+	for (const r of reservedSlots(settings, date))
+		items.push({
+			key: `r-${r.id}`,
+			kind: 'reserved',
+			start: r.start,
+			end: r.end,
+			title: r.label,
+			category: r.category,
+			pinned: true,
+			state: state(r.start, r.end)
+		});
 	const p = patternFor(settings, date);
 	if (p.kind === 'work' && p.lunch) {
 		const s = hmToMin(p.lunch[0]);
@@ -98,5 +115,6 @@ export function agendaFor(
 			state: state(s, e)
 		});
 	}
-	return items.sort((a, b) => a.start - b.start || (a.kind === 'meeting' ? -1 : 1));
+	const rank: Record<AgendaKind, number> = { meeting: 0, reserved: 1, lunch: 2, block: 3 };
+	return items.sort((a, b) => a.start - b.start || rank[a.kind] - rank[b.kind]);
 }

@@ -9,7 +9,6 @@ export interface TierInfo {
 	themeLevel: 0 | 1 | 2;
 	personal: boolean;
 	customBoard: boolean;
-	insightWeeks: number;
 	timeline: boolean;
 	dataTools: boolean;
 	perks: string[];
@@ -24,10 +23,9 @@ export const TIERS: Record<Tier, TierInfo> = {
 		themeLevel: 0,
 		personal: false,
 		customBoard: false,
-		insightWeeks: 4,
 		timeline: false,
 		dataTools: false,
-		perks: ['5 projects, 3 goals', 'Carbon and Chalk themes', '4-week forecast']
+		perks: ['5 projects, 3 goals', 'Carbon and Chalk themes', 'Reserved time and drag to move']
 	},
 	pro: {
 		id: 'pro',
@@ -37,7 +35,6 @@ export const TIERS: Record<Tier, TierInfo> = {
 		themeLevel: 1,
 		personal: true,
 		customBoard: true,
-		insightWeeks: 12,
 		timeline: true,
 		dataTools: false,
 		perks: [
@@ -45,7 +42,7 @@ export const TIERS: Record<Tier, TierInfo> = {
 			'Personal days and tasks',
 			'Custom board columns and labels',
 			'Eight themes',
-			'12-week forecast and Timeline'
+			'Timeline view'
 		]
 	},
 	ultimate: {
@@ -56,15 +53,9 @@ export const TIERS: Record<Tier, TierInfo> = {
 		themeLevel: 2,
 		personal: true,
 		customBoard: true,
-		insightWeeks: 26,
 		timeline: true,
 		dataTools: true,
-		perks: [
-			'Everything in Pro',
-			'Exclusive Gilt theme',
-			'26-week forecast',
-			'JSON export and import'
-		]
+		perks: ['Everything in Pro', 'Exclusive Gilt theme', 'JSON export and import']
 	}
 };
 

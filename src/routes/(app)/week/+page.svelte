@@ -21,7 +21,7 @@
 		weekStart
 	} from '#lib/domain/dates.ts';
 	import { bookedMin, dayCapacity, remainingMin } from '#lib/domain/plan.ts';
-	import { blockers, code, forecast } from '#lib/domain/forecast.ts';
+	import { blockers, forecast } from '#lib/domain/forecast.ts';
 
 	let offset = $state(0);
 	const start = $derived(addDays(weekStart(clock.today), offset * 7));
@@ -104,25 +104,47 @@
 		{/snippet}
 	</PageHead>
 
-	<div
-		class="flex flex-wrap gap-[18px] font-mono text-[11px] tracking-[0.08em] text-ink-3 uppercase"
-	>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-[18px] border border-dashed border-line-3"></span>Auto ·
-			may move</span
+	<div class="flex flex-col gap-2">
+		<div
+			class="flex flex-wrap gap-x-[18px] gap-y-2 font-mono text-[11px] tracking-[0.08em] text-ink-3 uppercase"
 		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-[18px] border border-ink"></span>Pinned</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-[18px] bg-ice"></span>Meeting</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-[18px] bg-accent"></span>Now</span
-		>
-		<span class="flex items-center gap-2"
-			><span class="inline-block h-2.5 w-[18px] border border-line hatch"></span>Not a work day</span
-		>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] border border-dashed border-line-3"></span>Auto ·
+				may move</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] border border-ink"></span>Pinned or moved</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] bg-accent"></span>Lit block</span
+			>
+			<span class="flex items-center gap-2 text-flare"
+				><span class="inline-block h-2.5 w-[18px] border border-flare bg-flare/12"
+				></span>Blocked</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] bg-ice"></span>Meeting</span
+			>
+			<span class="flex items-center gap-2 text-lilac"
+				><span class="inline-block h-2.5 w-[18px] border-y border-lilac/50 bg-lilac/10"
+				></span>Reserved</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="relative inline-block h-2.5 w-[18px] border border-line-3"
+					><span class="absolute inset-y-0 left-0 w-1 bg-lilac"></span></span
+				>Label colour</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-0.5 w-[18px] bg-ink"></span>Now</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] border border-line hatch"></span>Not a work day</span
+			>
+		</div>
+		<p class="m-0 text-[13px] text-muted">
+			Drag a block to any time this week to keep it there. Double-click a moved block to hand it
+			back to the planner. Open a task to see why it landed where it did.
+		</p>
 	</div>
 
 	<div class="flex flex-wrap items-start gap-6">
@@ -145,13 +167,13 @@
 						onclick={() => openTask(t.id)}
 						class="flex w-full flex-col gap-1 border-b border-line px-4 py-3 text-left hover:bg-hover"
 					>
-						<span class="text-sm font-semibold">{t.title}</span>
+						<span class="text-sm font-semibold {waits.length ? 'text-flare' : ''}">{t.title}</span>
 						<span
-							class="font-mono text-[10px] uppercase {f?.tone === 'late'
+							class="font-mono text-[10px] uppercase {waits.length || f?.tone === 'late'
 								? 'text-flare'
 								: 'text-muted'}"
 						>
-							{#if waits.length}Blocked · waits on {waits.map((w) => code(w.code)).join(', ')}
+							{#if waits.length}Blocked · waits on {waits.map((w) => w.ref).join(', ')}
 							{:else if p}{remainingMin(t)} min · forecast {fmtShort(p.endDate)} · {f?.label}
 							{:else}No room in 120 days{/if}
 						</span>

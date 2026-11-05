@@ -1,5 +1,5 @@
 import type { Category, Goal, ISODate, Meeting, Plan, Project, Settings, Task } from '../types.ts';
-import { addDays, diffDays, hmToMin, patternFor, weekStart } from './dates.ts';
+import { addDays, diffDays, patternFor } from './dates.ts';
 import { bookedMin, dayCapacity, remainingMin } from './plan.ts';
 
 export type Health = 'On track' | 'At risk' | 'Off track' | 'Complete' | 'Not started';
@@ -100,55 +100,57 @@ export function goalProgress(
 	return { current, pct, pace, daysLeft };
 }
 
-export interface WeekLoad {
-	start: ISODate;
-	capacityMin: number;
-	bookedMin: number;
-	meetingMin: number;
+/** Logged focus minutes for each day from `from` to `to`, oldest first. */
+export function dailyFocus(
+	tasks: Task[],
+	from: ISODate,
+	to: ISODate
+): { date: ISODate; minutes: number }[] {
+	const n = Math.max(0, diffDays(to, from));
+	const out = Array.from({ length: n + 1 }, (_, i) => ({ date: addDays(from, i), minutes: 0 }));
+	const at = new Map(out.map((d) => [d.date, d]));
+	for (const t of tasks)
+		for (const l of t.log) {
+			const d = at.get(l.date);
+			if (d) d.minutes += l.minutes;
+		}
+	return out;
 }
 
-/** Free capacity against forecast work, per week, for the Insights chart. */
-export function weeklyLoad(
+/** Planned minutes against plannable minutes for each of the next `days` days. */
+export function upcomingLoad(
 	settings: Settings,
 	meetings: Meeting[],
 	plan: Plan,
 	today: ISODate,
-	weeks = 12
-): WeekLoad[] {
-	const out: WeekLoad[] = [];
-	const w0 = weekStart(today);
-	for (let w = 0; w < weeks; w++) {
-		const start = addDays(w0, w * 7);
-		let cap = 0;
-		let booked = 0;
-		let meet = 0;
-		for (let i = 0; i < 7; i++) {
-			const d = addDays(start, i);
-			cap += dayCapacity(settings, meetings, d);
-			booked += bookedMin(plan, d);
-			if (patternFor(settings, d).kind === 'work')
-				for (const m of meetings) if (m.date === d) meet += hmToMin(m.end) - hmToMin(m.start);
-		}
-		out.push({ start, capacityMin: cap, bookedMin: booked, meetingMin: meet });
-	}
-	return out;
+	days = 7
+): { date: ISODate; kind: string; capacityMin: number; bookedMin: number }[] {
+	return Array.from({ length: days }, (_, i) => {
+		const date = addDays(today, i);
+		return {
+			date,
+			kind: patternFor(settings, date).kind,
+			capacityMin: dayCapacity(settings, meetings, date),
+			bookedMin: bookedMin(plan, date)
+		};
+	});
 }
 
-/** Off-the-job hours: University days since the start date plus logged Study time. */
-export function otjHours(
-	settings: Settings,
+/** Logged hours grouped by any key (project, label…), biggest first. */
+export function hoursBy(
 	tasks: Task[],
-	today: ISODate
-): { uni: number; logged: number; total: number } {
-	let uni = 0;
-	const days = Math.min(1500, Math.max(0, diffDays(today, settings.otjStart)));
-	for (let i = 0; i <= days; i++) {
-		const d = addDays(settings.otjStart, i);
-		const p = patternFor(settings, d);
-		if (p.kind === 'uni') uni += p.otjHours;
+	from: ISODate,
+	to: ISODate,
+	keys: (t: Task) => (string | null)[]
+): Map<string | null, number> {
+	const out = new Map<string | null, number>();
+	for (const t of tasks) {
+		let m = 0;
+		for (const l of t.log) if (l.date >= from && l.date <= to) m += l.minutes;
+		if (!m) continue;
+		for (const k of keys(t)) out.set(k, (out.get(k) ?? 0) + m / 60);
 	}
-	const logged = loggedHours(tasks, settings.otjStart, today, 'Study');
-	return { uni, logged, total: uni + logged };
+	return new Map([...out].sort((a, b) => b[1] - a[1]));
 }
 
 /** Actual ÷ estimate over finished tasks with logged time. */

@@ -91,7 +91,9 @@
 								onclick={() => openTask(t.id)}
 								class="truncate text-left text-sm font-semibold hover:underline {t.status === 'done'
 									? 'text-muted line-through'
-									: ''}">{t.title}</button
+									: workspace.waitsOn(t).length
+										? 'text-flare'
+										: ''}">{t.title}</button
 							>
 							<Badge tone={u.tone} label={u.label} />
 							{#if f}<Badge tone={f.tone} label={f.label} />{:else}<span></span>{/if}

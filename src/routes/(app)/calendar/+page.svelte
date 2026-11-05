@@ -173,9 +173,9 @@
 									class="flex items-center gap-1.5 truncate border border-line-2 bg-raised px-1.5 py-0.5 text-left text-[11.5px] {it
 										.t.status === 'done'
 										? 'text-muted line-through'
-										: u.tone === 'late'
+										: u.tone === 'late' || workspace.waitsOn(it.t).length
 											? 'text-flare'
-											: 'text-ink-2'}"
+											: 'text-ink-2'} {workspace.waitsOn(it.t).length ? 'border-flare' : ''}"
 								>
 									<span class="size-1.5 flex-none {catSwatch[it.t.category]}"></span><span
 										class="truncate">{it.label}</span
@@ -210,7 +210,7 @@
 				{#each agenda as a (a.key)}
 					<button
 						type="button"
-						disabled={a.kind === 'lunch'}
+						disabled={a.kind === 'lunch' || a.kind === 'reserved'}
 						onclick={() =>
 							a.task ? openTask(a.task.id) : a.meeting ? ui.openMeeting(a.meeting) : null}
 						class="grid w-full grid-cols-[52px_2px_1fr] gap-3 px-4 py-2 text-left hover:bg-hover disabled:hover:bg-transparent {a.state ===
@@ -226,7 +226,12 @@
 									? 'text-ice'
 									: a.kind === 'lunch'
 										? 'text-muted'
-										: 'font-semibold'}">{a.title}</span
+										: a.kind === 'reserved'
+											? 'text-lilac'
+											: workspace.waitsOn(a.task).length
+												? 'font-semibold text-flare'
+												: 'font-semibold'}"
+								>{a.title}{a.kind === 'reserved' ? ' · reserved' : ''}</span
 							>
 							<span class="font-mono text-[10.5px] text-muted"
 								>{minToHM(a.start)}–{minToHM(a.end)}</span

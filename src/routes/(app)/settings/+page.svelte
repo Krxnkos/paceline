@@ -16,7 +16,9 @@
 	import { clock } from '#lib/stores/clock.svelte.ts';
 	import { DOW_LONG, fmtShort, dayWorkMinutes, fmtHours } from '#lib/domain/dates.ts';
 	import { input } from '#lib/ui/styles.ts';
-	import type { DayPattern, Weekday } from '#lib/types.ts';
+	import { CATEGORIES } from '#lib/types.ts';
+	import type { Category, DayPattern, Reserved, Weekday } from '#lib/types.ts';
+	import { uid } from '#lib/domain/seed.ts';
 
 	const s = $derived(workspace.settings);
 	const order: Weekday[] = [1, 2, 3, 4, 5, 6, 0];
@@ -31,9 +33,16 @@
 	function setKind(d: Weekday, kind: DayPattern['kind']) {
 		if (kind === 'work')
 			setPattern(d, { kind: 'work', start: '09:00', end: '17:00', lunch: ['12:00', '12:30'] });
-		else if (kind === 'uni') setPattern(d, { kind: 'uni', otjHours: 7.5 });
+		else if (kind === 'uni') setPattern(d, { kind: 'uni' });
 		else if (kind === 'personal') setPattern(d, { kind: 'personal', start: '09:00', end: '18:00' });
 		else setPattern(d, { kind: 'off' });
+	}
+
+	const reserved = $derived(s.reserved ?? []);
+	function setReserved(id: string, patch: Partial<Reserved>) {
+		workspace.updateSettings({
+			reserved: reserved.map((r) => (r.id === id ? { ...r, ...patch } : r))
+		});
 	}
 
 	function num(v: string, min: number, max: number) {
@@ -168,19 +177,7 @@
 						>
 						<span class="text-[13px] text-muted">Personal tasks only</span>
 					{:else if p.kind === 'uni'}
-						<label class="flex items-center gap-2 font-mono text-[11px] text-muted"
-							>OFF-THE-JOB HOURS
-							<input
-								type="number"
-								step="0.5"
-								min="0"
-								max="12"
-								value={p.otjHours}
-								class="{input} w-24 font-mono"
-								onchange={(e) =>
-									setPattern(d, { kind: 'uni', otjHours: num(e.currentTarget.value, 0, 12) })}
-							/></label
-						>
+						<span class="text-[13px] text-muted">No tasks are planned on University days</span>
 					{/if}
 				</div>
 			{/each}
@@ -267,27 +264,125 @@
 		</div>
 	</Panel>
 
-	<Panel title="Off-the-job training">
-		<div class="grid gap-4 p-[18px] sm:grid-cols-2">
-			<Field label="Target hours">
-				<input
-					type="number"
-					min="1"
-					value={s.otjTarget}
-					class="{input} font-mono"
-					onchange={(e) =>
-						workspace.updateSettings({ otjTarget: num(e.currentTarget.value, 1, 5000) })}
-				/>
-			</Field>
-			<Field label="Counting from">
-				<input
-					type="date"
-					value={s.otjStart}
-					class="{input} font-mono text-[13px]"
-					onchange={(e) =>
-						e.currentTarget.value && workspace.updateSettings({ otjStart: e.currentTarget.value })}
-				/>
-			</Field>
+	<Panel title="Reserved time" meta="{reserved.length} slot{reserved.length === 1 ? '' : 's'}">
+		<div class="flex flex-col">
+			<p class="m-0 border-b border-line px-[18px] py-3 text-[13.5px] text-ink-3">
+				Set time aside on work days for one kind of task, like 20 minutes of Admin at the start of
+				each day. Only tasks in that category are planned into it, and it shows on Today and Week.
+			</p>
+			{#each reserved as r (r.id)}
+				<div
+					class="flex flex-wrap items-end gap-3 border-b border-line px-[18px] py-3.5 last:border-0"
+				>
+					<label class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted"
+						>NAME
+						<input
+							value={r.label}
+							maxlength="40"
+							class="{input} w-40"
+							onchange={(e) =>
+								setReserved(r.id, { label: e.currentTarget.value.trim() || r.category })}
+						/></label
+					>
+					<label class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted"
+						>FOR
+						<Select
+							value={r.category}
+							class="w-36"
+							options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+							onchange={(e) => setReserved(r.id, { category: e.currentTarget.value as Category })}
+						/></label
+					>
+					<label class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted"
+						>STARTS
+						<span class="flex gap-2">
+							<Select
+								value={r.start === 'start' ? 'start' : 'time'}
+								class="w-40"
+								options={[
+									{ value: 'start', label: 'Start of day' },
+									{ value: 'time', label: 'At a time' }
+								]}
+								onchange={(e) =>
+									setReserved(r.id, {
+										start: e.currentTarget.value === 'start' ? 'start' : '09:00'
+									})}
+							/>
+							{#if r.start !== 'start'}
+								<input
+									type="time"
+									step="300"
+									value={r.start}
+									aria-label="Start time"
+									class="{input} w-28 font-mono text-[13px]"
+									onchange={(e) =>
+										e.currentTarget.value && setReserved(r.id, { start: e.currentTarget.value })}
+								/>
+							{/if}
+						</span></label
+					>
+					<label class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted"
+						>MINUTES
+						<input
+							type="number"
+							min="5"
+							max="240"
+							step="5"
+							value={r.minutes}
+							class="{input} w-24 font-mono"
+							onchange={(e) => setReserved(r.id, { minutes: num(e.currentTarget.value, 5, 240) })}
+						/></label
+					>
+					<div class="flex flex-col gap-1.5">
+						<span class="font-mono text-[10.5px] tracking-[0.1em] text-muted">DAYS</span>
+						<div class="flex gap-1" role="group" aria-label="Days">
+							{#each order as d (d)}
+								{@const on = r.days.includes(d)}
+								<button
+									type="button"
+									aria-pressed={on}
+									aria-label={DOW_LONG[d]}
+									class="size-10 border font-mono text-[11px] {on
+										? 'border-ink bg-ink text-canvas'
+										: 'border-line-2 text-muted hover:border-ink-3'}"
+									onclick={() =>
+										setReserved(r.id, {
+											days: on ? r.days.filter((x) => x !== d) : [...r.days, d].sort()
+										})}>{DOW_LONG[d].slice(0, 2)}</button
+								>
+							{/each}
+						</div>
+					</div>
+					<button
+						type="button"
+						class="ml-auto flex size-10 items-center justify-center text-muted hover:text-flare"
+						aria-label="Remove {r.label}"
+						onclick={() =>
+							workspace.updateSettings({ reserved: reserved.filter((x) => x.id !== r.id) })}
+						><Icon name="trash" size={16} /></button
+					>
+				</div>
+			{/each}
+			<div class="px-[18px] py-3.5">
+				<Button
+					size="md"
+					icon="plus"
+					onclick={() =>
+						workspace.updateSettings({
+							reserved: [
+								...reserved,
+								{
+									id: uid(),
+									label: 'Admin',
+									category: 'Admin',
+									start: 'start',
+									minutes: 20,
+									days: [1, 2, 3, 4, 5]
+								}
+							]
+						})}>Add reserved time</Button
+				>
+			</div>
 		</div>
 	</Panel>
 

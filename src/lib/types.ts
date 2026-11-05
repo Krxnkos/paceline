@@ -64,6 +64,19 @@ export interface Task {
 	/** Personal tasks only run on Personal and non-working days; work tasks never do. */
 	scope?: TaskScope;
 	labels?: string[];
+	/** Dragged to a fixed start on the calendar; the planner keeps it there. */
+	fixed?: { date: ISODate; start: number } | null;
+}
+
+/** Time set aside every week for one category, e.g. 20 minutes of Admin at the start of each day. */
+export interface Reserved {
+	id: string;
+	label: string;
+	category: Category;
+	/** 'start' means the start of the working day. */
+	start: HM | 'start';
+	minutes: number;
+	days: Weekday[];
 }
 
 export interface BlockSpan {
@@ -109,7 +122,7 @@ export interface Goal {
 
 export type DayPattern =
 	| { kind: 'work'; start: HM; end: HM; lunch?: [HM, HM] }
-	| { kind: 'uni'; otjHours: number }
+	| { kind: 'uni' }
 	| { kind: 'personal'; start: HM; end: HM }
 	| { kind: 'off' };
 
@@ -138,8 +151,7 @@ export interface Settings {
 	/** 'fit' sizes the focus timer to the rest of the current block. */
 	focusMode?: 'fixed' | 'fit';
 	leave: ISODate[];
-	otjTarget: number;
-	otjStart: ISODate;
+	reserved?: Reserved[];
 }
 
 export interface Block {

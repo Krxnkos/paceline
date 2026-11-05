@@ -1,6 +1,6 @@
 import type { Alert, Badge, ISODate, Plan, Project, Settings, Task } from '../types.ts';
 import { addDays, diffDays, dow, fmtShort } from './dates.ts';
-import { score } from './plan.ts';
+import { score, splitDep } from './plan.ts';
 
 export function code(n: number, prefix = 'T'): string {
 	return `${prefix}-${String(n).padStart(prefix === 'T' ? 3 : 2, '0')}`;
@@ -22,10 +22,27 @@ export function urgency(t: Task, today: ISODate): Badge {
 }
 
 /** Unfinished dependencies. */
-export function blockers(t: Task, tasks: Task[]): Task[] {
-	return t.deps
-		.map((id) => tasks.find((x) => x.id === id))
-		.filter((x): x is Task => !!x && x.status !== 'done');
+export interface Blocker {
+	id: string;
+	taskId: string;
+	/** "T-014", or "T-014 › Sub-task title" for a sub-task. */
+	ref: string;
+}
+
+/** What a task still waits on: unfinished tasks, or unticked sub-tasks of other tasks. */
+export function blockers(t: Task, tasks: Task[]): Blocker[] {
+	const out: Blocker[] = [];
+	for (const id of t.deps) {
+		const [tid, sid] = splitDep(id);
+		const d = tasks.find((x) => x.id === tid);
+		if (!d || d.status === 'done') continue;
+		if (!sid) out.push({ id, taskId: tid, ref: code(d.code) });
+		else {
+			const s = d.subtasks.find((x) => x.id === sid);
+			if (s && !s.done) out.push({ id, taskId: tid, ref: `${code(d.code)} › ${s.title}` });
+		}
+	}
+	return out;
 }
 
 /** When the plan says it will finish, against its due date. */
@@ -113,7 +130,7 @@ export function alerts(
 			label: 'Blocked',
 			text: t.title,
 			sub: `Waits on ${blockers(t, tasks)
-				.map((b) => code(b.code))
+				.map((b) => b.ref)
 				.join(', ')}`,
 			taskId: t.id
 		});

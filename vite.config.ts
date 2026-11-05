@@ -36,6 +36,10 @@ export default defineConfig({
 			}
 		})
 	],
+	server: {
+		// The in-memory MongoDB used in dev writes profiling files into the project root.
+		watch: { ignored: ['**/*.profraw'] }
+	},
 	test: {
 		expect: { requireAssertions: true },
 		projects: [

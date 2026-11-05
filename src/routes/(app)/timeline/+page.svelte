@@ -51,7 +51,7 @@
 	const x = (d: ISODate) => diffDays(d, start) * PX;
 
 	interface Bar {
-		kind: 'scheduled' | 'lead' | 'late' | 'done' | 'milestone' | 'none';
+		kind: 'scheduled' | 'lead' | 'late' | 'blocked' | 'done' | 'milestone' | 'none';
 		from?: ISODate;
 		to?: ISODate;
 	}
@@ -68,7 +68,13 @@
 				(b) => b.taskId === t.id && b.start <= clock.minute && b.end > clock.minute
 			);
 			return {
-				kind: isLead ? 'lead' : f?.tone === 'late' ? 'late' : 'scheduled',
+				kind: workspace.waitsOn(t).length
+					? 'blocked'
+					: isLead
+						? 'lead'
+						: f?.tone === 'late'
+							? 'late'
+							: 'scheduled',
 				from: p.startDate,
 				to: p.endDate
 			};
@@ -165,6 +171,7 @@
 		scheduled: 'bg-raised border border-line-3',
 		lead: 'bg-accent border border-accent',
 		late: 'bg-raised border border-line-3 border-r-2 border-r-flare',
+		blocked: 'bg-flare/25 border border-flare',
 		done: 'border border-dashed border-line-3',
 		milestone: '',
 		none: ''
@@ -261,7 +268,9 @@
 								<span
 									class="flex-1 truncate text-[13px] {r.t.status === 'done'
 										? 'text-muted line-through'
-										: ''}">{r.t.title}</span
+										: workspace.waitsOn(r.t).length
+											? 'text-flare'
+											: ''}">{r.t.title}</span
 								>
 								{#if f && f.key !== 'ontime' && f.key !== 'ends'}<Badge
 										tone={f.tone}
@@ -386,6 +395,9 @@
 			>
 			<span class="flex items-center gap-2"
 				><span class="inline-block h-2.5 w-5 bg-accent"></span>Lead</span
+			>
+			<span class="flex items-center gap-2 text-flare"
+				><span class="inline-block h-2.5 w-5 border border-flare bg-flare/25"></span>Blocked</span
 			>
 			<span class="flex items-center gap-2"
 				><span class="inline-block h-2.5 w-5 border-y border-flare bg-flare/20"></span>Late overrun</span

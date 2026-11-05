@@ -200,11 +200,12 @@
 								e.dataTransfer?.setData('text/plain', t.id);
 							}}
 							ondragend={() => ((dragId = null), (over = null))}
-							class="flex cursor-grab flex-col gap-2.5 border-t-[3px] bg-surface p-3 active:cursor-grabbing {catBorder[
-								t.category
-							]} {lead ? 'outline-2 -outline-offset-2 outline-accent' : ''} {dragId === t.id
-								? 'opacity-40'
-								: ''}"
+							class="flex cursor-grab flex-col gap-2.5 border-t-[3px] p-3 active:cursor-grabbing {waits.length &&
+							!done
+								? 'border border-flare border-t-flare bg-flare/8'
+								: `bg-surface ${catBorder[t.category]}`} {lead
+								? 'outline-2 -outline-offset-2 outline-accent'
+								: ''} {dragId === t.id ? 'opacity-40' : ''}"
 						>
 							<div
 								class="flex justify-between gap-2 font-mono text-[10px] tracking-[0.04em] text-muted uppercase"
@@ -221,7 +222,9 @@
 								onclick={() => openTask(t.id)}
 								class="text-left text-sm leading-snug font-bold hover:underline {done
 									? 'text-muted line-through'
-									: 'text-ink'}">{t.title}</button
+									: waits.length
+										? 'text-flare'
+										: 'text-ink'}">{t.title}</button
 							>
 							{#if t.labels?.length}
 								<div class="flex flex-wrap gap-1">
@@ -239,7 +242,7 @@
 							{/if}
 							{#if waits.length && !done}
 								<span class="font-mono text-[10px] text-flare uppercase"
-									>Waits on {waits.map((w) => code(w.code)).join(', ')}</span
+									>■ Blocked · waits on {waits.map((w) => w.ref).join(', ')}</span
 								>
 							{/if}
 							<div class="flex items-center justify-between gap-1.5">
