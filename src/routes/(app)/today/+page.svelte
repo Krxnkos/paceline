@@ -201,11 +201,11 @@
 		<span class={lateCount ? 'text-amber' : 'text-accent-text'}
 			>■ {lateCount ? 'Behind pace' : 'On pace'}</span
 		>
-		<span>Auto-fit {minToHM(clock.minute)}</span>
+		<span class="max-sm:hidden">Auto-fit {minToHM(clock.minute)}</span>
 		{#if nextMeeting}<span>Next · {nextMeeting.title} {minToHM(nextMeeting.start)}</span>{/if}
 		{#if lateCount}<span class="text-flare">■ {lateCount} forecast late</span>{/if}
 	</div>
-	<div>Doc. PL-0101 · Today</div>
+	<div class="max-sm:hidden">Doc. PL-0101 · Today</div>
 </div>
 
 <div class="flex flex-col gap-[26px] px-4 pt-6 pb-12 nav:px-8">

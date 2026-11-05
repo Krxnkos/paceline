@@ -73,12 +73,22 @@ const cookieBase = { path: '/', httpOnly: true, secure: !dev, sameSite: 'lax' as
 
 // ── Sessions ────────────────────────────────────────────────
 
+/**
+ * Sessions slide: each use pushes the end back, so someone working every day stays
+ * signed in. "Remember me" lasts 30 days from last use (never past 90 days in all);
+ * otherwise 12 hours from last use.
+ */
+const REMEMBER_FOR = 30 * DAY;
+const SESSION_FOR = DAY / 2;
+const MAX_SESSION_AGE = 90 * DAY;
+
 async function startSession(ctx: Ctx, user: UserDoc, remember: boolean) {
 	const token = randomToken();
-	const expiresAt = new Date(Date.now() + (remember ? 30 * DAY : DAY / 2));
+	const expiresAt = new Date(Date.now() + (remember ? REMEMBER_FOR : SESSION_FOR));
 	await ctx.db.insertOne('sessions', {
 		_id: await sha256(token),
 		userId: user._id,
+		remember,
 		expiresAt,
 		createdAt: new Date()
 	});
@@ -92,12 +102,33 @@ async function startSession(ctx: Ctx, user: UserDoc, remember: boolean) {
 export async function currentUser(db: Gateway, cookies: Cookies): Promise<UserDoc | null> {
 	const token = cookies.get(SESSION_COOKIE);
 	if (!token || token.length > 64) return null;
-	const s = await db.findOne('sessions', {
-		_id: await sha256(token),
-		expiresAt: { $gt: new Date() }
-	});
+	const id = await sha256(token);
+	const s = await db.findOne('sessions', { _id: id, expiresAt: { $gt: new Date() } });
 	if (!s) return null;
+	await renew(db, cookies, token, id, s);
 	return (await db.findOne('users', { _id: s.userId as string })) as UserDoc | null;
+}
+
+/** Push the session's end back once it's past half its life (one write every few hours at most). */
+async function renew(
+	db: Gateway,
+	cookies: Cookies,
+	token: string,
+	id: string,
+	s: Record<string, unknown>
+) {
+	const now = Date.now();
+	const created = new Date(s.createdAt as Date).getTime();
+	const expires = new Date(s.expiresAt as Date).getTime();
+	// Older sessions have no flag: anything that ran over a day was "remember me".
+	const remember = typeof s.remember === 'boolean' ? s.remember : expires - created > DAY;
+	const span = remember ? REMEMBER_FOR : SESSION_FOR;
+	if (expires - now > span / 2) return;
+	const next = Math.min(now + span, created + MAX_SESSION_AGE);
+	if (next <= expires) return;
+	const expiresAt = new Date(next);
+	await db.updateOne('sessions', { _id: id }, { $set: { expiresAt, remember } });
+	cookies.set(SESSION_COOKIE, token, remember ? { ...cookieBase, expires: expiresAt } : cookieBase);
 }
 
 export async function signOut(ctx: Ctx) {

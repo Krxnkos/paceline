@@ -8,6 +8,8 @@
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
 	import { THEMES, theme } from '#lib/stores/theme.svelte.ts';
 	import { clock } from '#lib/stores/clock.svelte.ts';
+	import { connection } from '#lib/stores/connection.svelte.ts';
+	import ConnectionNotice from '#lib/shell/ConnectionNotice.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -44,13 +46,31 @@
 		if (workspace.status === 'ready') untrack(() => workspace.tick());
 	});
 
+	// Back at the tab after a while: is the session still good, and is the plan current?
+	let lastCheck = Date.now();
+	async function recheck() {
+		if (!auth.user || Date.now() - lastCheck < 60_000) return;
+		lastCheck = Date.now();
+		await auth.refresh();
+		if (!connection.issue) await workspace.refresh();
+	}
+
 	const ready = $derived(
 		!!auth.user &&
 			(!!workspace.data || (workspace.status === 'empty' && page.url.pathname === '/onboarding'))
 	);
 </script>
 
-<svelte:window ononline={() => workspace.retry()} />
+<svelte:window
+	ononline={() => {
+		workspace.retry();
+		void auth.refresh();
+	}}
+	onfocus={recheck}
+/>
+<svelte:document onvisibilitychange={() => document.visibilityState === 'visible' && recheck()} />
+
+<ConnectionNotice />
 
 {#if ready && !auth.user?.username}
 	<UsernameGate />

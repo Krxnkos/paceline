@@ -16,6 +16,7 @@ import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.t
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
 import { api, auth } from './auth.svelte.ts';
+import { connection } from './connection.svelte.ts';
 import { tierInfo } from '../tiers.ts';
 import type { Column, Label, Placement } from '../types.ts';
 import { STATUSES } from '../types.ts';
@@ -77,6 +78,10 @@ class WorkspaceStore {
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#inflight = false;
 	#dirty = false;
+	/** Identifies one save attempt, so a retry after a lost reply isn't mistaken for a clash. */
+	#saveId = uid();
+	#retries = 0;
+	#lastSync = 0;
 
 	/** Load this person's plan from the server, showing the cached copy meanwhile. */
 	async load(userId: string) {
@@ -90,17 +95,32 @@ class WorkspaceStore {
 			this.data = cached.data;
 			this.#version = cached.version;
 			this.#dirty = cached.dirty;
+			this.#saveId = cached.saveId ?? uid();
 		}
-		const r = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+		const r = await api<{ data: Workspace | null; version: number; saveId?: string }>(
+			'GET',
+			'/api/workspace'
+		);
 		if (this.userId !== userId) return;
+		if (r.status === 401) {
+			connection.report('signedOut');
+			this.status = this.data ? 'ready' : 'error';
+			return;
+		}
 		if (!r.ok) {
 			// Offline: carry on from the cache and sync when the connection returns.
 			this.saving = 'offline';
 			this.status = this.data ? 'ready' : 'error';
+			if (this.#dirty) this.#queue(10_000);
 			return;
 		}
-		if (cached?.dirty && cached.version === r.data!.version) {
-			// Unsent local edits made offline on top of the latest server copy.
+		this.#lastSync = Date.now();
+		// Unsent local edits on top of the latest server copy, or on top of a save of
+		// ours that landed although its reply never arrived: send them.
+		const ours =
+			r.data!.version === (cached?.version ?? -1) ||
+			(r.data!.version === (cached?.version ?? -2) + 1 && r.data!.saveId === cached?.saveId);
+		if (cached?.dirty && ours) {
 			this.status = 'ready';
 			this.#queue(0);
 			return;
@@ -128,7 +148,9 @@ class WorkspaceStore {
 		this.#persist();
 	}
 
-	#readCache(userId: string): { data: Workspace; version: number; dirty: boolean } | null {
+	#readCache(
+		userId: string
+	): { data: Workspace; version: number; dirty: boolean; saveId?: string } | null {
 		try {
 			const raw = localStorage.getItem(CACHE(userId));
 			return raw ? JSON.parse(raw) : null;
@@ -145,7 +167,8 @@ class WorkspaceStore {
 				JSON.stringify({
 					data: $state.snapshot(this.data),
 					version: this.#version,
-					dirty: this.#dirty
+					dirty: this.#dirty,
+					saveId: this.#saveId
 				})
 			);
 		} catch {
@@ -172,24 +195,31 @@ class WorkspaceStore {
 		this.#inflight = true;
 		this.#dirty = false;
 		const userId = this.userId;
-		const r = await api<{ version?: number; conflict?: boolean; data?: Workspace | null }>(
-			'PUT',
-			'/api/workspace',
-			{
-				data: $state.snapshot(this.data),
-				version: this.#version
-			}
-		);
+		const r = await api<{
+			version?: number;
+			conflict?: boolean;
+			code?: string;
+			data?: Workspace | null;
+		}>('PUT', '/api/workspace', {
+			data: $state.snapshot(this.data),
+			version: this.#version,
+			saveId: this.#saveId
+		});
 		this.#inflight = false;
 		if (this.userId !== userId) return;
 		if (r.ok && r.data?.version) {
 			this.#version = r.data.version;
+			this.#saveId = uid();
+			this.#retries = 0;
+			this.#lastSync = Date.now();
 			this.saving = this.#dirty ? 'saving' : 'synced';
 			this.#writeCache();
 			if (this.#dirty) this.#queue(0);
 			return;
 		}
 		if (r.status === 409 && r.data?.conflict) {
+			this.#saveId = uid();
+			this.#retries = 0;
 			// Another device saved first. Take its copy rather than overwrite it.
 			this.data = r.data.data ?? this.data;
 			this.#version = r.data.version ?? this.#version;
@@ -201,7 +231,7 @@ class WorkspaceStore {
 			toast('Updated from another device · your last change there won', { tone: 'err' });
 			return;
 		}
-		if (r.status === 403) {
+		if (r.status === 403 && r.data?.code === 'limit') {
 			// Over the plan's limit: put back the last saved copy.
 			const fresh = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
 			if (fresh.ok && fresh.data?.data) {
@@ -213,16 +243,49 @@ class WorkspaceStore {
 			toast(r.error ?? 'That is over your plan’s limit.', { tone: 'err' });
 			return;
 		}
-		if (r.status === 401) {
-			this.saving = 'offline';
-			toast('Your session ended. Sign in again to save.', { tone: 'err' });
-			return;
-		}
-		// Offline or a server hiccup: keep the edit and retry.
+		// Anything else: keep the edit on this device and try again.
 		this.#dirty = true;
 		this.saving = 'offline';
 		this.#writeCache();
-		this.#queue(r.status === 0 ? 10_000 : 5_000);
+		if (r.status === 401) {
+			// Kept until they sign in again; it syncs straight after.
+			connection.report('signedOut');
+			return;
+		}
+		if (r.challenge) {
+			this.#queue(30_000);
+			return;
+		}
+		// Back off: 5s, 10s, 20s… up to a minute.
+		this.#retries++;
+		this.#queue(Math.min(60_000, 5_000 * 2 ** Math.min(this.#retries - 1, 4)));
+	}
+
+	/**
+	 * Coming back to the tab after a while: push anything unsent, or pick up
+	 * changes made on another device so the next edit doesn't clash.
+	 */
+	async refresh() {
+		if (!this.userId || this.status !== 'ready' || this.#inflight) return;
+		if (this.#dirty) return this.#queue(0);
+		if (Date.now() - this.#lastSync < 60_000) return;
+		const userId = this.userId;
+		const r = await api<{ data: Workspace | null; version: number }>('GET', '/api/workspace');
+		if (this.userId !== userId || !r.ok || !r.data) {
+			if (r.status === 401) connection.report('signedOut');
+			return;
+		}
+		this.#lastSync = Date.now();
+		this.saving = 'synced';
+		// Only take the server copy if nothing changed here in the meantime.
+		if (r.data.version > this.#version && r.data.data && !this.#dirty && !this.#inflight) {
+			this.data = r.data.data;
+			this.#version = r.data.version;
+			this.#undo = [];
+			this.canUndo = false;
+			this.#writeCache();
+			toast('Updated with changes from another device');
+		}
 	}
 
 	/** Push unsent changes now (e.g. when the connection comes back). */

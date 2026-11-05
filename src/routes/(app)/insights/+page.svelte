@@ -273,7 +273,9 @@
 		<div class="flex flex-col gap-2.5 px-[18px] py-4">
 			{#each ahead as d (d.date)}
 				{@const full = d.capacityMin > 0 && d.bookedMin >= d.capacityMin * 0.98}
-				<div class="grid grid-cols-[86px_minmax(0,1fr)_110px] items-center gap-3">
+				<div
+					class="grid grid-cols-[76px_minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[86px_minmax(0,1fr)_120px]"
+				>
 					<span class="text-[13px] {d.date === today ? 'font-bold text-accent-text' : ''}"
 						>{d.date === today ? 'Today' : `${DOW_SHORT[dow(d.date)]} ${fmtDayMonth(d.date)}`}</span
 					>
@@ -288,8 +290,13 @@
 								style="width: {(d.bookedMin / aheadMax) * 100}%"
 							></div>
 						</div>
-						<span class="text-right font-mono text-xs {full ? 'text-amber' : 'text-muted'}"
-							>{fmtHours(d.bookedMin)} / {fmtHours(d.capacityMin)} h{full ? ' · full' : ''}</span
+						<span
+							class="text-right font-mono text-xs whitespace-nowrap {full
+								? 'text-amber'
+								: 'text-muted'}"
+							>{fmtHours(d.bookedMin)} / {fmtHours(d.capacityMin)} h<span class="max-sm:hidden"
+								>{full ? ' · full' : ''}</span
+							></span
 						>
 					{:else}
 						<div class="h-3 hatch"></div>

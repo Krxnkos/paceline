@@ -134,6 +134,19 @@ scoped to the `paceline` database.
 
 `PASSWORD_PEPPER` must never change once accounts exist: every password hash depends on it.
 
+### Cloudflare security settings
+
+Paceline's pages call its own API in the background. Cloudflare's bot checks ("Just a moment…" / "Performing
+security verification") can't be passed by background requests, so they make saves fail. Keep these off for the
+krxnkos.xyz zone:
+
+- **Security ▸ Settings ▸ Bot Fight Mode**: off. On the Free plan it can't be skipped for one path or host.
+- **I'm Under Attack mode**: off, except during a real attack.
+- **Security ▸ WAF ▸ Custom rules**: no Managed Challenge or JS Challenge rule that matches `paceline.krxnkos.xyz`.
+
+**Security ▸ Events** shows which service challenged a request. If a check does slip through, the app says so and asks
+for a reload; unsent changes are kept in the browser and saved afterwards.
+
 ## Usernames
 
 After verifying their email, each person chooses a username before entering the app (existing accounts are asked
