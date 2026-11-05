@@ -26,13 +26,14 @@ Built from the _Paceline — Web App Design_ canvas: identity, six colour themes
 - **Smart capture**: `Draft report !2 #deep @fri 90m +Test_Fixture ~weekly ^asap`, plus `qw …` for quick wins and
   `mtg … 10:00-10:30` for meetings, with live parse chips.
 - **Auto-scheduler** (`src/lib/domain/plan.ts`): places work by score into free time, after dependencies, never
-  before a start date, keeping a buffer free. Admin and Comms prefer afternoons.
+  before a start date, keeping a buffer free. Admin and Comms prefer afternoons. Reserved time
+  (Settings) is kept for one category, and blocks dragged on Today or Week stay where they're dropped.
 - **Today**: the lead block with a Pomodoro ring, schedule, must-dos 1–3 (4–5 unlock afterwards), quick wins and
   alerts.
-- **Week** time grid (double-click a block to pin it), **Board** with WIP limit and drag & drop, **Table** with
+- **Week** time grid (drag a block to move it, double-click to pin or release it), **Board** with WIP limit and drag & drop, **Table** with
   sorting, grouping, inline edit and bulk actions, **Timeline** Gantt with dependency arrows, **Calendar** with
   drag-to-reschedule, **Projects** with health, **Goals** with pace against a straight line, and **Insights**
-  with a 12-week capacity forecast and off-the-job hours.
+  with this week against last, 14 days of focus, the week ahead and where the time went.
 - Task drawer via a shareable `?task=T-014` URL, a command palette (`⌘K` / `Ctrl K`), a focus overlay, undo on
   every change (`⌘Z`) and keyboard navigation (`G` then `T/I/W/A/B/L/C/P/O/S`).
 - **Six themes** (Carbon, Chalk, Midnight, Frost, Ember, Sand) plus Match system, with no flash on load.
@@ -161,7 +162,7 @@ Commands run on the server, are limited to Developer accounts, and every change 
 collection. Timed plans fall back to Free by themselves when they run out. Developers can't change their own badge
 from the console.
 
-Project and goal limits are enforced on the server. Theme, Timeline, forecast length and export gates are in the app.
+Project and goal limits are enforced on the server. Theme, Timeline and export gates are in the app.
 
 ## Personal time (Pro and Ultimate)
 

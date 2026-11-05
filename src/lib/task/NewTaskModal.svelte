@@ -8,7 +8,9 @@
 	import { workspace, openTask } from '../stores/workspace.svelte.ts';
 	import { toast } from '../stores/toast.svelte.ts';
 	import { code } from '../domain/forecast.ts';
-	import { inputLg, label } from '../ui/styles.ts';
+	import { newTask } from '../domain/seed.ts';
+	import { clock } from '../stores/clock.svelte.ts';
+	import { inputLg, label, toneText } from '../ui/styles.ts';
 	import type { Task } from '../types.ts';
 
 	let text = $state('');
@@ -55,6 +57,21 @@
 		fill('repeat', p.repeat);
 		if (p.quick) quick = true;
 		if (p.personal && workspace.tier.personal) fill('scope', 'personal');
+	});
+
+	// Live answer to "where will this land?" as the fields change.
+	const preview = $derived.by(() => {
+		if (!ui.newTask.open || parsed.kind === 'meeting') return null;
+		return workspace.preview(
+			newTask(0, clock.today, {
+				...$state.snapshot(draft),
+				id: '__preview',
+				title: parsed.title || 'New task',
+				quick,
+				inbox: false,
+				status: 'next'
+			} as Partial<Task>)
+		);
 	});
 
 	function create(e?: Event) {
@@ -129,6 +146,19 @@
 				checked={quick}
 				onchange={(v) => (quick = v)}
 			/>
+			{#if preview}
+				<div
+					class="flex flex-col gap-1 border px-3.5 py-3 {preview.tone === 'late'
+						? 'border-flare bg-flare/6'
+						: preview.tone === 'warn'
+							? 'border-amber'
+							: 'border-line-2 bg-surface'}"
+					aria-live="polite"
+				>
+					<span class={label}>Where it will show up</span>
+					<span class="text-[14px] leading-snug {toneText[preview.tone]}">{preview.text}</span>
+				</div>
+			{/if}
 			<p class="m-0 font-mono text-[10.5px] tracking-[0.08em] text-faint uppercase">
 				Smart syntax fills the fields · explicit edits win
 			</p>

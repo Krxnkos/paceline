@@ -52,3 +52,13 @@ export const labelCls: Record<LabelColor, string> = {
 	amber: 'border-amber text-amber',
 	flare: 'border-flare text-flare'
 };
+
+/** Solid colour for a label's strip on calendar blocks. */
+export const labelBar: Record<LabelColor, string> = {
+	ink: 'bg-ink-3',
+	accent: 'bg-accent-text',
+	ice: 'bg-ice',
+	lilac: 'bg-lilac',
+	amber: 'bg-amber',
+	flare: 'bg-flare'
+};

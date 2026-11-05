@@ -8,16 +8,16 @@ import type {
 	Task,
 	Workspace
 } from '../types.ts';
-import { addDays, addMonths, fmtShort } from '../domain/dates.ts';
+import { addDays, addMonths, fmtShort, minToHM, nowMin } from '../domain/dates.ts';
 import { parseCapture, type Parsed } from '../domain/parse.ts';
-import { buildPlan, remainingMin } from '../domain/plan.ts';
-import { alerts, code } from '../domain/forecast.ts';
+import { buildPlan, remainingMin, reservedSlots } from '../domain/plan.ts';
+import { alerts, blockers, code } from '../domain/forecast.ts';
 import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.ts';
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
 import { api, auth } from './auth.svelte.ts';
 import { tierInfo } from '../tiers.ts';
-import type { Column, Label } from '../types.ts';
+import type { Column, Label, Placement } from '../types.ts';
 import { STATUSES } from '../types.ts';
 
 /** Offline cache only; MongoDB is the source of truth. */
@@ -57,7 +57,7 @@ class WorkspaceStore {
 		buildPlan(
 			this.tasks.filter((t) => t.id !== this.data?.awaiting?.taskId),
 			this.meetings,
-			this.data?.settings ?? blankWorkspace(clock.today).settings,
+			this.data?.settings ?? blankWorkspace().settings,
 			clock.now,
 			this.data?.active ?? null
 		)
@@ -123,7 +123,7 @@ class WorkspaceStore {
 	}
 
 	start(kind: 'example' | 'blank') {
-		this.data = kind === 'example' ? exampleWorkspace(clock.today) : blankWorkspace(clock.today);
+		this.data = kind === 'example' ? exampleWorkspace(clock.today) : blankWorkspace();
 		this.status = 'ready';
 		this.#persist();
 	}
@@ -572,6 +572,129 @@ class WorkspaceStore {
 		return ['free', 'pro', 'ultimate'].indexOf(t.access) <= this.tier.themeLevel;
 	}
 
+	/** The labels on a task, in the board's label order. */
+	labelsOf(t: Task | undefined): Label[] {
+		if (!t?.labels?.length) return [];
+		return this.labels.filter((l) => t.labels!.includes(l.id));
+	}
+
+	/** What a task still waits on (empty when it can run). */
+	waitsOn(t: Task | undefined) {
+		return t && t.status !== 'done' && t.deps.length ? blockers(t, this.tasks) : [];
+	}
+
+	/** Plain-English answer to "where will this show up?" for a task. */
+	explain(
+		t: Task,
+		placement: Placement | null | undefined = this.plan.placed[t.id]
+	): { tone: 'plain' | 'warn' | 'late'; text: string } {
+		const at = (d: string, m: number) => `${fmtShort(d)} ${minToHM(m)}`;
+		if (t.status === 'done')
+			return { tone: 'plain', text: 'Done. Its blocks stay on the calendar, marked as done.' };
+		if (t.inbox)
+			return {
+				tone: 'warn',
+				text: 'In the Inbox, so not planned yet. Press Plan it, or give it a project or date.'
+			};
+		if (t.quick)
+			return {
+				tone: 'plain',
+				text: 'Quick win: never put on the calendar. It sits in Today’s Quick wins list.'
+			};
+		if (t.start === 'manual')
+			return { tone: 'plain', text: 'Manual start: the planner leaves this one to you.' };
+		const waits = blockers(t, this.tasks);
+		if (!placement && waits.length)
+			return {
+				tone: 'late',
+				text: `Blocked by ${waits.map((w) => w.ref).join(', ')}. It’s planned once that’s done.`
+			};
+		if (!placement)
+			return {
+				tone: 'late',
+				text:
+					t.scope === 'personal'
+						? 'No room on a Personal or non-working day in the next 120 days.'
+						: 'No free working time in the next 120 days.'
+			};
+		const b = placement.blocks;
+		const first = b[0];
+		const last = b[b.length - 1];
+		const parts = [
+			b.length === 1
+				? `${at(first.date, first.start)}–${minToHM(last.end)}`
+				: `${b.length} blocks, ${at(first.date, first.start)} to ${at(last.date, last.end)}`
+		];
+		if (t.fixed) parts.push('kept where you dragged it');
+		else if (t.start === 'asap') parts.push('as soon as possible');
+		else if (t.start === 'date' && t.startDate) parts.push(`not before ${fmtShort(t.startDate)}`);
+		if (waits.length) parts.push(`after ${waits.map((w) => w.ref).join(', ')}`);
+		if (t.scope === 'personal') parts.push('personal days only');
+		const slot = b
+			.flatMap((x) =>
+				reservedSlots(this.settings, x.date).filter(
+					(r) => r.category === t.category && x.start >= r.start && x.end <= r.end
+				)
+			)
+			.at(0);
+		if (slot) parts.push(`uses your ${slot.label} time`);
+		return { tone: 'plain', text: `${parts.join(' · ')}.` };
+	}
+
+	/** Where a task not yet created would land, for the New task preview. */
+	preview(draft: Task) {
+		const plan = buildPlan(
+			[...this.tasks.filter((t) => t.id !== this.data?.awaiting?.taskId), draft],
+			this.meetings,
+			this.settings,
+			clock.now,
+			this.active
+		);
+		return this.explain(draft, plan.placed[draft.id]);
+	}
+
+	/** Drag and drop: keep a task at a start time on a day. */
+	moveTo(id: string, date: string, start: number) {
+		const t = this.task(id);
+		if (!t || t.status === 'done' || t.quick || t.inbox) return;
+		let s = Math.round(start / 5) * 5;
+		if (date === clock.today) s = Math.max(s, Math.ceil(nowMin(clock.now) / 5) * 5);
+		s = Math.max(0, Math.min(s, 24 * 60 - 15));
+		if (date < clock.today) return;
+		this.#change((ws) => {
+			const x = ws.tasks.find((y) => y.id === id)!;
+			x.fixed = { date, start: s };
+			if (x.start === 'manual') x.start = 'auto';
+			// Moving the lit block: keep the minutes already spent, then let it go.
+			const a = ws.active;
+			if (a?.taskId === id) {
+				const spent = Math.min(a.end, clock.minute) - a.start;
+				if (spent > 0) {
+					x.history = [
+						...(x.history ?? []),
+						{ date: a.date, start: a.start, end: a.start + spent }
+					];
+					x.creditMin = Math.max(x.loggedMin, x.creditMin ?? 0) + spent;
+				}
+				ws.active = null;
+			}
+			if (ws.awaiting?.taskId === id) {
+				ws.awaiting = null;
+				x.creditMin = 0;
+			}
+		});
+		toast(`${code(t.code)} moved to ${fmtShort(date)} ${minToHM(s)}`, {
+			action: 'Undo',
+			onAction: () => this.undo()
+		});
+	}
+
+	/** Hand a dragged task back to the planner. */
+	unfix(id: string) {
+		this.updateTask(id, { fixed: null });
+		toast('Back to automatic planning');
+	}
+
 	/** Whether the plan allows another project or goal. */
 	canAdd(kind: 'projects' | 'goals') {
 		const left = this[kind].length < this.tier[kind];
@@ -587,7 +710,7 @@ class WorkspaceStore {
 		if (!t) return;
 		this.#change((ws) => {
 			ws.tasks = ws.tasks.filter((x) => x.id !== id);
-			for (const x of ws.tasks) x.deps = x.deps.filter((d) => d !== id);
+			for (const x of ws.tasks) x.deps = x.deps.filter((d) => d !== id && !d.startsWith(`${id}:`));
 		});
 		toast(`Deleted ${code(t.code)}`, { action: 'Undo', onAction: () => this.undo() });
 	}
@@ -596,7 +719,7 @@ class WorkspaceStore {
 		const set = new Set(ids);
 		this.#change((ws) => {
 			ws.tasks = ws.tasks.filter((x) => !set.has(x.id));
-			for (const x of ws.tasks) x.deps = x.deps.filter((d) => !set.has(d));
+			for (const x of ws.tasks) x.deps = x.deps.filter((d) => !set.has(d.split(':')[0]));
 		});
 	}
 
@@ -645,6 +768,7 @@ class WorkspaceStore {
 		this.#change((ws) => {
 			const t = ws.tasks.find((x) => x.id === id);
 			if (t) t.subtasks = t.subtasks.filter((s) => s.id !== sid);
+			for (const x of ws.tasks) x.deps = x.deps.filter((d) => d !== `${id}:${sid}`);
 		});
 	}
 

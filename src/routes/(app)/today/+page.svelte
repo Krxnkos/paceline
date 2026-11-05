@@ -17,6 +17,7 @@
 	import { fmtHours, fmtLong, minToHM, patternFor } from '#lib/domain/dates.ts';
 	import { bookedMin, dayCapacity, freeIntervals } from '#lib/domain/plan.ts';
 	import { mustDos, urgency } from '#lib/domain/forecast.ts';
+	import { labelBar } from '#lib/ui/styles.ts';
 
 	const today = $derived(clock.today);
 	const s = $derived(workspace.settings);
@@ -42,7 +43,7 @@
 			: pattern.kind === 'personal'
 				? `Personal day · ${pattern.start}–${pattern.end}`
 				: pattern.kind === 'uni'
-					? `University day · off-the-job ${pattern.otjHours} h`
+					? 'University day · no tasks planned'
 					: s.leave.includes(today)
 						? 'On leave · nothing planned'
 						: 'Day off · nothing planned'
@@ -116,6 +117,13 @@
 				meta: 'LUNCH',
 				time: 'text-muted'
 			};
+		if (a.kind === 'reserved')
+			return {
+				box: 'border-lilac/60 bg-lilac/10 text-lilac font-medium',
+				tag: 'RESERVED',
+				meta: `${a.category!.toUpperCase()} TASKS ONLY · ${mins} MIN`,
+				time: 'text-lilac'
+			};
 		if (a.done)
 			return {
 				box: 'border-line text-muted font-medium line-through',
@@ -137,6 +145,14 @@
 				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN`,
 				time: 'text-muted'
 			};
+		const waits = workspace.waitsOn(a.task);
+		if (waits.length)
+			return {
+				box: 'border-flare bg-flare/10 text-flare font-semibold',
+				tag: 'BLOCKED',
+				meta: `WAITS ON ${waits.map((w) => w.ref).join(', ')}`,
+				time: 'text-flare'
+			};
 		if (a === lead && a.state === 'now')
 			return {
 				box: 'bg-accent border-accent text-accent-ink font-extrabold',
@@ -147,7 +163,7 @@
 		if (a.pinned)
 			return {
 				box: 'border-ink text-ink font-semibold',
-				tag: a.task?.start === 'asap' ? 'ASAP' : 'PINNED',
+				tag: a.fixed ? 'MOVED' : a.task?.start === 'asap' ? 'ASAP' : 'PINNED',
 				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN`,
 				time: 'text-muted'
 			};
@@ -158,6 +174,17 @@
 			time: 'text-muted'
 		};
 	}
+
+	// ── Drag one block onto another to swap the order ─────────
+	let dragId = $state<string | null>(null);
+	let dropKey = $state<string | null>(null);
+	const movable = (a: AgendaItem) =>
+		a.kind === 'block' && !a.history && a.state !== 'past' && a.task?.status !== 'done';
+	// A block lands at the start of the item it's dropped on; meetings and lunch push it after.
+	const target = (a: AgendaItem) =>
+		a.kind === 'meeting' || a.kind === 'lunch' ? a.end : Math.max(a.start, clock.minute);
+	const canDrop = (a: AgendaItem) =>
+		!!dragId && a.task?.id !== dragId && a.state !== 'past' && !a.history;
 
 	function replan() {
 		const n = (workspace.plan.byDate[today] ?? []).length;
@@ -218,18 +245,53 @@
 			<div class="flex flex-col gap-1.5 px-[18px] py-3.5">
 				{#each agenda as a (a.key)}
 					{@const st = blockStyle(a)}
-					<div class="grid grid-cols-[54px_minmax(0,1fr)] items-stretch gap-3">
+					{@const labels = workspace.labelsOf(a.task)}
+					<div
+						role="listitem"
+						class="grid grid-cols-[54px_minmax(0,1fr)] items-stretch gap-3"
+						ondragover={(e) => {
+							if (!canDrop(a)) return;
+							e.preventDefault();
+							dropKey = a.key;
+						}}
+						ondragleave={() => dropKey === a.key && (dropKey = null)}
+						ondrop={(e) => {
+							if (!canDrop(a)) return;
+							e.preventDefault();
+							workspace.moveTo(dragId!, today, target(a));
+							dragId = dropKey = null;
+						}}
+					>
 						<span class="pt-[9px] font-mono text-xs {st.time}">{minToHM(a.start)}</span>
 						<button
 							type="button"
-							disabled={a.kind === 'lunch'}
+							disabled={a.kind === 'lunch' || a.kind === 'reserved'}
+							draggable={movable(a)}
+							ondragstart={(e) => {
+								dragId = a.task!.id;
+								e.dataTransfer?.setData('text/plain', a.task!.id);
+							}}
+							ondragend={() => (dragId = dropKey = null)}
+							ondblclick={() => a.task?.fixed && !a.history && workspace.unfix(a.task.id)}
 							onclick={() => (a.task ? openTask(a.task.id) : null)}
-							class="flex flex-col justify-between gap-1 border px-3 py-[9px] text-left transition-opacity disabled:cursor-default {st.box} {a.kind ===
-								'block' && a.state === 'past'
+							title={movable(a)
+								? 'Drag onto another block to swap · double-click to release a moved block'
+								: undefined}
+							class="relative flex flex-col justify-between gap-1 overflow-hidden border py-[9px] pr-3 text-left transition-opacity disabled:cursor-default {labels.length
+								? 'pl-4'
+								: 'pl-3'} {st.box} {a.kind === 'block' && a.state === 'past'
 								? 'opacity-50'
-								: ''}"
+								: ''} {movable(a) ? 'cursor-grab active:cursor-grabbing' : ''} {dragId ===
+							a.task?.id
+								? 'opacity-40'
+								: ''} {dropKey === a.key ? 'outline-2 outline-offset-2 outline-ink' : ''}"
 							style="min-height: {Math.max(40, Math.round((a.end - a.start) * 0.9))}px"
 						>
+							{#if labels.length}
+								<span class="absolute inset-y-0 left-0 flex w-1.5 flex-col" aria-hidden="true">
+									{#each labels as l (l.id)}<span class="flex-1 {labelBar[l.color]}"></span>{/each}
+								</span>
+							{/if}
 							<span class="flex items-baseline justify-between gap-2.5">
 								<span class="text-sm">{a.title}</span>
 								<span
@@ -237,9 +299,17 @@
 									>{st.tag}</span
 								>
 							</span>
-							<span class="font-mono text-[10px] tracking-[0.06em] not-italic opacity-75"
-								>{st.meta}</span
-							>
+							<span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+								<span class="font-mono text-[10px] tracking-[0.06em] not-italic opacity-75"
+									>{st.meta}</span
+								>
+								{#each labels as l (l.id)}
+									<span
+										class="inline-flex items-center gap-1 bg-canvas/80 px-1.5 py-px font-mono text-[9.5px] font-semibold tracking-[0.06em] text-ink uppercase not-italic"
+										><span class="size-1.5 {labelBar[l.color]}"></span>{l.name}</span
+									>
+								{/each}
+							</span>
 						</button>
 					</div>
 				{:else}
@@ -249,6 +319,11 @@
 							: 'No work blocks today.'}
 					</p>
 				{/each}
+				{#if agenda.some(movable)}
+					<p class="m-0 pt-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">
+						Drag a block onto another to swap them · double-click a moved block to release it
+					</p>
+				{/if}
 			</div>
 		</Panel>
 
@@ -257,11 +332,7 @@
 				{lead}
 				next={nextItem}
 				{gap}
-				calm={pattern.kind === 'uni'
-					? 'University day · off-the-job'
-					: pattern.kind === 'off'
-						? 'Day off'
-						: null}
+				calm={pattern.kind === 'uni' ? 'University day' : pattern.kind === 'off' ? 'Day off' : null}
 			/>
 
 			<Panel
@@ -272,6 +343,7 @@
 					{@const locked = i >= 3 && !firstThreeDone}
 					{@const done = t.status === 'done'}
 					{@const u = urgency(t, today)}
+					{@const blocked = !done && workspace.waitsOn(t).length > 0}
 					<div
 						class="grid min-h-[54px] w-full grid-cols-[30px_minmax(0,1fr)_auto_24px] items-center gap-3 border-b border-line px-[18px] py-3 {locked
 							? 'bg-panel'
@@ -294,13 +366,19 @@
 								? 'text-faint'
 								: done
 									? 'text-faint line-through'
-									: 'text-ink hover:underline'}"
+									: blocked
+										? 'text-flare hover:underline'
+										: 'text-ink hover:underline'}"
 							>{locked ? 'Locked until 1–3 are done' : t.title}</button
 						>
 						{#if locked}
 							<Badge fill tone="mute" label="If time" />
 						{:else}
-							<Badge fill tone={done ? 'lead' : u.tone} label={done ? 'Done' : u.label} />
+							<Badge
+								fill
+								tone={done ? 'lead' : blocked ? 'late' : u.tone}
+								label={done ? 'Done' : blocked ? 'Blocked' : u.label}
+							/>
 						{/if}
 						{#if locked}
 							<span class="text-faint"><Icon name="lock" size={16} /></span>

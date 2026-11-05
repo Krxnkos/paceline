@@ -19,7 +19,7 @@ export function uid(): string {
 	);
 }
 
-export function defaultSettings(today: ISODate): Settings {
+export function defaultSettings(): Settings {
 	const work = {
 		kind: 'work' as const,
 		start: '07:45',
@@ -31,7 +31,7 @@ export function defaultSettings(today: ISODate): Settings {
 		pattern: {
 			0: { kind: 'off' },
 			1: work,
-			2: { kind: 'uni', otjHours: 7.5 },
+			2: { kind: 'uni' },
 			3: work,
 			4: work,
 			5: { kind: 'work', start: '07:45', end: '12:30' },
@@ -42,18 +42,17 @@ export function defaultSettings(today: ISODate): Settings {
 		focusMin: 25,
 		breakMin: 5,
 		leave: [],
-		otjTarget: 400,
-		otjStart: addDays(today, -364)
+		reserved: []
 	};
 }
 
-export function blankWorkspace(today: ISODate): Workspace {
+export function blankWorkspace(): Workspace {
 	return {
 		tasks: [],
 		projects: [],
 		meetings: [],
 		goals: [],
-		settings: defaultSettings(today),
+		settings: defaultSettings(),
 		nextCode: 1,
 		nextProjectCode: 1,
 		onboarded: true
@@ -89,7 +88,7 @@ export function newTask(code: number, today: ISODate, patch: Partial<Task> = {})
 
 /** The example plan from the design boards, laid out around today. */
 export function exampleWorkspace(today: ISODate): Workspace {
-	const settings = defaultSettings(today);
+	const settings = defaultSettings();
 	const ws = weekStart(today);
 	const d = (n: number) => addDays(today, n);
 
@@ -144,6 +143,7 @@ export function exampleWorkspace(today: ISODate): Workspace {
 			repeat?: Task['repeat'];
 			notes?: string;
 			subtasks?: string[];
+			labels?: string[];
 		} = {}
 	) => {
 		const id = `t${code}`;
@@ -168,6 +168,7 @@ export function exampleWorkspace(today: ISODate): Workspace {
 				repeat: o.repeat ?? '',
 				notes: o.notes ?? '',
 				log,
+				labels: o.labels ?? [],
 				subtasks: (o.subtasks ?? []).map((s, i) => ({ id: `${id}s${i}`, title: s, done: i === 0 }))
 			})
 		);
@@ -191,7 +192,8 @@ export function exampleWorkspace(today: ISODate): Workspace {
 		status: 'doing',
 		cat: 'Deep Work'
 	});
-	add('Review PCB layout for test fixture', {
+	const pcb = add('Review PCB layout for test fixture', {
+		labels: ['lb-hw', 'lb-client'],
 		p: 'p1',
 		pri: 1,
 		est: 120,
@@ -208,6 +210,7 @@ export function exampleWorkspace(today: ISODate): Workspace {
 		]
 	});
 	add('Draft HNC Unit 5 lab report', {
+		labels: ['lb-uni'],
 		p: 'p2',
 		pri: 2,
 		est: 180,
@@ -239,6 +242,7 @@ export function exampleWorkspace(today: ISODate): Workspace {
 		cat: 'Admin'
 	});
 	const harness = add('Build fixture harness', {
+		labels: ['lb-hw'],
 		p: 'p1',
 		pri: 2,
 		est: 240,
@@ -270,7 +274,10 @@ export function exampleWorkspace(today: ISODate): Workspace {
 		est: 105,
 		due: d(8),
 		cat: 'Deep Work',
-		status: 'backlog'
+		status: 'backlog',
+		// Waits on one sub-task of the PCB review, not the whole review.
+		deps: [`${pcb}:${pcb}s1`],
+		labels: ['lb-hw']
 	});
 	add('Revise maths for Unit 7 exam', {
 		p: 'p3',
@@ -413,12 +420,28 @@ export function exampleWorkspace(today: ISODate): Workspace {
 		}
 	];
 
+	settings.reserved = [
+		{
+			id: 'r-admin',
+			label: 'Admin',
+			category: 'Admin',
+			start: 'start',
+			minutes: 20,
+			days: [1, 2, 3, 4, 5]
+		}
+	];
+
 	return {
 		tasks,
 		projects,
 		meetings,
 		goals,
 		settings,
+		labels: [
+			{ id: 'lb-hw', name: 'Hardware', color: 'amber' },
+			{ id: 'lb-client', name: 'Client', color: 'ice' },
+			{ id: 'lb-uni', name: 'Uni', color: 'lilac' }
+		],
 		nextCode: code,
 		nextProjectCode: 5,
 		onboarded: true

@@ -8,14 +8,16 @@
 	import Icon from '../ui/Icon.svelte';
 	import ProgressBar from '../ui/ProgressBar.svelte';
 	import Select from '../ui/Select.svelte';
+	import Toggle from '../ui/Toggle.svelte';
 	import TaskFields from './TaskFields.svelte';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import { focus } from '../stores/focus.svelte.ts';
 	import { ui } from '../stores/ui.svelte.ts';
 	import { clock } from '../stores/clock.svelte.ts';
 	import { blockers, code, forecast, urgency } from '../domain/forecast.ts';
+	import { splitDep } from '../domain/plan.ts';
 	import { fmtDur, fmtShort, minToHM } from '../domain/dates.ts';
-	import { input, label } from '../ui/styles.ts';
+	import { input, label, toneText } from '../ui/styles.ts';
 	import type { Task } from '../types.ts';
 
 	const param = $derived(page.url.searchParams.get('task'));
@@ -39,6 +41,22 @@
 	const urg = $derived(task ? urgency(task, clock.today) : null);
 	const fc = $derived(task ? forecast(task, workspace.plan, workspace.tasks) : null);
 	const waits = $derived(task ? blockers(task, workspace.tasks) : []);
+	const explain = $derived(task ? workspace.explain(task) : null);
+
+	/** A dependency id as shown: the task, or the task › sub-task. */
+	function depInfo(id: string) {
+		const [tid, sid] = splitDep(id);
+		const d = workspace.task(tid);
+		if (!d) return null;
+		const sub = sid ? d.subtasks.find((x) => x.id === sid) : null;
+		if (sid && !sub) return null;
+		return {
+			code: code(d.code),
+			title: sub ? `${d.title} › ${sub.title}` : d.title,
+			done: sub ? sub.done || d.status === 'done' : d.status === 'done',
+			sub: !!sub
+		};
+	}
 
 	let newSub = $state('');
 	let logMin = $state(15);
@@ -49,8 +67,19 @@
 			? [
 					{ value: '', label: '+ Add a dependency…' },
 					...workspace.tasks
-						.filter((t) => t.id !== task.id && !task.deps.includes(t.id) && t.status !== 'done')
-						.map((t) => ({ value: t.id, label: `${code(t.code)} · ${t.title}` }))
+						.filter((t) => t.id !== task.id && t.status !== 'done')
+						.flatMap((t) => [
+							...(task.deps.includes(t.id)
+								? []
+								: [{ value: t.id, label: `${code(t.code)} · ${t.title}` }]),
+							// Or wait on just one of its sub-tasks.
+							...t.subtasks
+								.filter((x) => !x.done && !task.deps.includes(`${t.id}:${x.id}`))
+								.map((x) => ({
+									value: `${t.id}:${x.id}`,
+									label: `      ↳ ${code(t.code)} sub-task · ${x.title}`
+								}))
+						])
 				]
 			: []
 	);
@@ -93,16 +122,67 @@
 				{/if}
 			</div>
 
+			<section
+				class="flex flex-col gap-2.5 border p-3.5 {explain?.tone === 'late'
+					? 'border-flare bg-flare/6'
+					: explain?.tone === 'warn'
+						? 'border-amber'
+						: 'border-line-2 bg-surface'}"
+				aria-label="Where it shows up"
+			>
+				<span class="{label} flex items-center justify-between gap-2"
+					>Where it shows up
+					{#if task.fixed && task.status !== 'done'}
+						<button
+							type="button"
+							class="font-mono text-[10.5px] tracking-[0.08em] text-ink-3 uppercase underline hover:text-ink"
+							onclick={() => workspace.unfix(task.id)}>Moved by hand · release</button
+						>
+					{/if}
+				</span>
+				{#if explain}
+					<p class="m-0 text-[14px] leading-snug {toneText[explain.tone]}">{explain.text}</p>
+				{/if}
+				{#if placement}
+					<div class="flex flex-col">
+						{#each placement.blocks.slice(0, 6) as b (b.date + b.start)}
+							<div class="flex justify-between border-b border-line py-1.5 font-mono text-[12px]">
+								<span class="text-muted">{fmtShort(b.date)}</span><span
+									>{minToHM(b.start)}–{minToHM(b.end)} · {fmtDur(b.end - b.start)}</span
+								>
+							</div>
+						{/each}
+						{#if placement.blocks.length > 6}<span class="pt-1 font-mono text-[11px] text-muted"
+								>+{placement.blocks.length - 6} more blocks</span
+							>{/if}
+					</div>
+				{/if}
+				{#if task.status !== 'done'}
+					<Toggle
+						label="Quick win"
+						hint={task.quick
+							? 'on: kept off the calendar. Turn off to plan it.'
+							: 'never put on the calendar'}
+						checked={!!task.quick}
+						onchange={(v) =>
+							workspace.updateTask(task.id, v ? { quick: true } : { quick: false, inbox: false })}
+					/>
+				{/if}
+			</section>
+
 			<TaskFields task={draft} onchange={(patch) => workspace.updateTask(task.id, patch)} />
 
 			<section class="flex flex-col gap-2.5">
 				<span class={label}>Depends on</span>
 				{#each task.deps as id (id)}
-					{@const d = workspace.task(id)}
+					{@const d = depInfo(id)}
 					{#if d}
 						<div class="flex items-center gap-2.5 border-b border-line py-1.5 text-[13.5px]">
-							<span class="font-mono text-[11px] text-faint">{code(d.code)}</span>
-							<span class="flex-1 truncate {d.status === 'done' ? 'text-muted line-through' : ''}"
+							<span class="font-mono text-[11px] text-faint">{d.code}</span>
+							{#if d.sub}<span class="font-mono text-[9.5px] tracking-[0.08em] text-muted uppercase"
+									>Sub-task</span
+								>{/if}
+							<span class="flex-1 truncate {d.done ? 'text-muted line-through' : ''}"
 								>{d.title}</span
 							>
 							<button
@@ -118,7 +198,7 @@
 				{/each}
 				{#if waits.length}
 					<span class="font-mono text-[10.5px] text-flare uppercase"
-						>Blocked · waits on {waits.map((w) => code(w.code)).join(', ')}</span
+						>Blocked · waits on {waits.map((w) => w.ref).join(', ')}</span
 					>
 				{/if}
 				<Select
@@ -130,39 +210,6 @@
 						depPick = '';
 					}}
 				/>
-			</section>
-
-			<section class="flex flex-col gap-2">
-				<span class={label}>Schedule</span>
-				{#if placement}
-					<span class="text-[13.5px] text-ink-2"
-						>{fmtDur(placement.blocks.reduce((n, b) => n + b.end - b.start, 0))} booked</span
-					>
-					{#each placement.blocks.slice(0, 6) as b (b.date + b.start)}
-						<div class="flex justify-between border-b border-line py-1.5 font-mono text-[12px]">
-							<span class="text-muted">{fmtShort(b.date)}</span><span
-								>{minToHM(b.start)}–{minToHM(b.end)}</span
-							>
-						</div>
-					{/each}
-					{#if placement.blocks.length > 6}<span class="font-mono text-[11px] text-muted"
-							>+{placement.blocks.length - 6} more blocks</span
-						>{/if}
-				{:else}
-					<span class="text-[13.5px] text-muted">
-						{task.status === 'done'
-							? `Done ${task.doneAt ? fmtShort(task.doneAt) : ''}`
-							: task.quick
-								? 'Quick wins are never auto-scheduled. Pick them on Today.'
-								: task.inbox
-									? 'Triage it out of the Inbox to plan it.'
-									: task.start === 'manual'
-										? 'Manual: the planner leaves this one to you.'
-										: waits.length
-											? 'Blocked until its dependencies are done.'
-											: 'No room in the next 120 days.'}
-					</span>
-				{/if}
 			</section>
 
 			<section class="flex flex-col gap-2">

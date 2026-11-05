@@ -28,3 +28,6 @@ vite.config.ts.timestamp-*
 # Local Wrangler secrets
 .dev.vars*
 !.dev.vars.example
+
+# Written by the in-memory MongoDB binary in dev
+*.profraw

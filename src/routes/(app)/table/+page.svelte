@@ -181,10 +181,16 @@
 					{#each g.rows as t (t.id)}
 						{@const f = forecast(t, workspace.plan, workspace.tasks)}
 						{@const u = urgency(t, clock.today)}
+						{@const waits = workspace.waitsOn(t)}
 						<tr
 							class="h-11 border-b border-line {selected.includes(t.id)
 								? 'bg-accent/10'
-								: 'hover:bg-hover/50'}"
+								: waits.length
+									? 'bg-flare/8 hover:bg-flare/12'
+									: 'hover:bg-hover/50'}"
+							title={waits.length
+								? `Blocked · waits on ${waits.map((w) => w.ref).join(', ')}`
+								: undefined}
 						>
 							<td class="px-2"
 								><Checkbox
@@ -194,14 +200,18 @@
 									onchange={() => toggle(t.id)}
 								/></td
 							>
-							<td class="px-2 font-mono text-xs text-faint">{code(t.code)}</td>
+							<td class="px-2 font-mono text-xs {waits.length ? 'text-flare' : 'text-faint'}"
+								>{code(t.code)}</td
+							>
 							<td class="px-1">
 								<input
 									value={t.title}
 									aria-label="Title"
 									class="{cell} font-semibold {t.status === 'done'
 										? 'text-muted line-through'
-										: ''}"
+										: waits.length
+											? 'text-flare'
+											: ''}"
 									onkeydown={(e) => {
 										if (e.key === 'Enter') e.currentTarget.blur();
 										if (e.key === 'Escape') {
