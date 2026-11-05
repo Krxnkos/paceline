@@ -4,6 +4,7 @@
  * signed in and which step of a sign-in is pending.
  */
 import type { Tier } from '../tiers.ts';
+import { CHALLENGE_MESSAGE, connection } from './connection.svelte.ts';
 
 export { PW_RULES, validEmail } from '../auth-rules.ts';
 
@@ -24,7 +25,11 @@ export interface ApiResult<T = Record<string, unknown>> {
 	status: number;
 	error?: string;
 	data?: T;
+	/** Cloudflare sent its "checking your browser" page instead of our API. */
+	challenge?: boolean;
 }
+
+const TIMEOUT_MS = 20_000;
 
 /** JSON request to our own API. Never throws: network failures come back as `ok: false`. */
 export async function api<T = Record<string, unknown>>(
@@ -32,32 +37,51 @@ export async function api<T = Record<string, unknown>>(
 	path: string,
 	body?: unknown
 ): Promise<ApiResult<T>> {
+	let res: Response;
 	try {
-		const res = await fetch(path, {
+		res = await fetch(path, {
 			method,
 			credentials: 'same-origin',
 			headers: body === undefined ? {} : { 'content-type': 'application/json' },
-			body: body === undefined ? undefined : JSON.stringify(body)
+			body: body === undefined ? undefined : JSON.stringify(body),
+			signal: AbortSignal.timeout(TIMEOUT_MS)
 		});
-		const data = (await res.json().catch(() => ({}))) as T & { message?: string };
-		return res.ok
-			? { ok: true, status: res.status, data }
-			: {
-					ok: false,
-					status: res.status,
-					error: data?.message ?? `Something went wrong (HTTP ${res.status}).`,
-					data
-				};
-	} catch {
-		return { ok: false, status: 0, error: 'You’re offline. Check your connection and try again.' };
+	} catch (e) {
+		const slow = e instanceof DOMException && e.name === 'TimeoutError';
+		return {
+			ok: false,
+			status: 0,
+			error: slow
+				? 'Paceline took too long to answer. Try again in a moment.'
+				: 'You’re offline. Check your connection and try again.'
+		};
 	}
+	const json = (res.headers.get('content-type') ?? '').includes('application/json');
+	// Our API always answers in JSON; an HTML 403 is Cloudflare's bot check.
+	if (res.headers.get('cf-mitigated') === 'challenge' || (res.status === 403 && !json)) {
+		connection.report('challenge');
+		return { ok: false, status: res.status, challenge: true, error: CHALLENGE_MESSAGE };
+	}
+	connection.clear('challenge');
+	const data = (json ? await res.json().catch(() => ({})) : {}) as T & { message?: string };
+	if (res.ok) return { ok: true, status: res.status, data };
+	return {
+		ok: false,
+		status: res.status,
+		error:
+			data?.message ??
+			(res.status >= 500
+				? `Paceline’s server didn’t answer properly (HTTP ${res.status}). Try again in a moment.`
+				: `That didn’t work (HTTP ${res.status}). Try again.`),
+		data
+	};
 }
 
 /** Remove data this browser holds about the signed-in person (and the old local-mode keys). */
 export function clearLocalData() {
 	try {
 		for (const k of Object.keys(localStorage))
-			if (/^pl-(ws-cache:|ws:|accounts$|session$|trusted$|locks$|focus$)/.test(k))
+			if (/^pl-(ws-cache:|ws:|accounts$|session$|trusted$|locks$|focus$|user$)/.test(k))
 				localStorage.removeItem(k);
 		sessionStorage.removeItem('pl-session');
 	} catch {
@@ -81,9 +105,36 @@ interface CodeStep {
 	devCode?: string;
 }
 
+const USER_CACHE = 'pl-user';
+
+function cachedUser(): User | null {
+	try {
+		return JSON.parse(localStorage.getItem(USER_CACHE) ?? 'null');
+	} catch {
+		return null;
+	}
+}
+
 class Auth {
-	user = $state<User | null>(null);
+	#user = $state<User | null>(null);
 	ready = $state(false);
+	/** Couldn't reach the server at start-up, so we're running on the cached account. */
+	offline = $state(false);
+
+	get user() {
+		return this.#user;
+	}
+
+	set user(u: User | null) {
+		this.#user = u;
+		if (u) connection.clear('signedOut');
+		try {
+			if (u) localStorage.setItem(USER_CACHE, JSON.stringify(u));
+			else localStorage.removeItem(USER_CACHE);
+		} catch {
+			/* storage blocked */
+		}
+	}
 	/** The sign-in waiting on a 6-digit code. */
 	pending = $state<{ email: string; purpose: Purpose } | null>(null);
 	/** Development only, when no email provider is set: the code to show on screen. */
@@ -94,11 +145,35 @@ class Auth {
 	/** Ask the server who is signed in. Safe to call repeatedly. */
 	init(): Promise<void> {
 		clearLegacy();
-		this.#init ??= api<{ user: User | null }>('GET', '/api/auth/me').then((r) => {
-			this.user = r.data?.user ?? null;
+		this.#init ??= this.refresh().then(() => {
 			this.ready = true;
 		});
 		return this.#init;
+	}
+
+	/**
+	 * Re-check the session. A clear "not signed in" ends it; a network problem or
+	 * Cloudflare check keeps the last known account so the app can work from its cache.
+	 */
+	async refresh(): Promise<void> {
+		const r = await api<{ user: User | null }>('GET', '/api/auth/me');
+		if (r.ok) {
+			this.offline = false;
+			const u = r.data?.user ?? null;
+			if (!u && this.#user && this.ready) {
+				// Signed out elsewhere or the session ran out while this tab was open.
+				connection.report('signedOut');
+				return;
+			}
+			this.user = u;
+			if (u) connection.clear('signedOut');
+			return;
+		}
+		const known = this.#user ?? cachedUser();
+		if (known) {
+			this.#user = known;
+			this.offline = true;
+		}
 	}
 
 	#step(email: string, d: CodeStep) {

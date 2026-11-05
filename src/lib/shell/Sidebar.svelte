@@ -27,7 +27,7 @@
 		page.url.pathname === n.href || page.url.pathname.startsWith(n.href + '/');
 	const syncLabel = $derived(
 		workspace.saving === 'offline'
-			? 'Offline · will sync'
+			? 'Not synced yet · retrying'
 			: workspace.saving === 'saving'
 				? 'Saving…'
 				: 'Synced · private'

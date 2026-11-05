@@ -21,14 +21,15 @@
 
 <form onsubmit={submit} class="flex flex-col gap-2">
 	<div
-		class="flex min-h-[52px] flex-wrap items-stretch border transition-colors {text
+		class="flex min-h-[52px] items-stretch border transition-colors {text
 			? 'border-accent'
 			: 'border-line-3 focus-within:border-ink-3'}"
 	>
 		<label
 			for="pl-capture"
-			class="flex items-center bg-accent px-4 font-mono text-xs font-bold tracking-[0.08em] text-accent-ink"
-			>CAPTURE</label
+			class="flex flex-none items-center bg-accent px-3 font-mono text-xs font-bold tracking-[0.08em] text-accent-ink sm:px-4"
+			><span class="sm:hidden" aria-hidden="true">+</span><span class="max-sm:sr-only">CAPTURE</span
+			></label
 		>
 		<input
 			id="pl-capture"
@@ -36,12 +37,12 @@
 			bind:value={text}
 			autocomplete="off"
 			{placeholder}
-			class="h-[50px] min-w-[220px] flex-1 bg-transparent px-4 text-base text-ink placeholder:text-faint focus:outline-none focus-visible:outline-none"
+			class="h-[50px] min-w-0 flex-1 bg-transparent px-3 text-base text-ink placeholder:text-faint focus:outline-none focus-visible:outline-none sm:px-4"
 		/>
 		<button
 			type="submit"
-			class="border-l border-line px-[18px] font-mono text-xs text-ink-3 hover:bg-hover hover:text-ink"
-			>ADD ↵</button
+			class="flex-none border-l border-line px-3.5 font-mono text-xs text-ink-3 hover:bg-hover hover:text-ink sm:px-[18px]"
+			>ADD<span class="max-sm:hidden"> ↵</span></button
 		>
 	</div>
 	<div

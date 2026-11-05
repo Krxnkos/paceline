@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { safeNext } from '../stores/connection.svelte.ts';
 	import Mark from '../ui/Mark.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
@@ -124,7 +126,7 @@
 
 	async function openToday() {
 		if (auth.user) await workspace.load(auth.user.id);
-		goto(workspace.data ? '/today' : '/onboarding');
+		goto(workspace.data ? safeNext(page.url) : '/onboarding');
 	}
 
 	const doneTitle = $derived(
