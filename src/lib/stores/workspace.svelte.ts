@@ -10,7 +10,7 @@ import type {
 } from '../types.ts';
 import { addDays, addMonths, fmtShort, minToHM, nowMin } from '../domain/dates.ts';
 import { parseCapture, type Parsed } from '../domain/parse.ts';
-import { buildPlan, remainingMin, reservedSlots } from '../domain/plan.ts';
+import { buildPlan, quickMin, remainingMin, reservedSlots } from '../domain/plan.ts';
 import { alerts, blockers, code } from '../domain/forecast.ts';
 import { blankWorkspace, exampleWorkspace, newTask, uid } from '../domain/seed.ts';
 import { clock } from './clock.svelte.ts';
@@ -502,7 +502,8 @@ class WorkspaceStore {
 				const len = a.end - a.start;
 				t.history = [...(t.history ?? []), { date: a.date, start: a.start, end: a.end }];
 				ws.active = null;
-				if (remainingMin(t) > len) t.creditMin = Math.max(t.loggedMin, t.creditMin ?? 0) + len;
+				if ((t.quick ? quickMin(t) : remainingMin(t)) > len)
+					t.creditMin = Math.max(t.loggedMin, t.creditMin ?? 0) + len;
 				else ws.awaiting = a;
 				changed = true;
 			}
@@ -659,10 +660,10 @@ class WorkspaceStore {
 				tone: 'warn',
 				text: 'In the Inbox, so not planned yet. Press Plan it, or give it a project or date.'
 			};
-		if (t.quick)
+		if (t.quick && this.settings.fillQuickWins === false)
 			return {
 				tone: 'plain',
-				text: 'Quick win: never put on the calendar. It sits in Today’s Quick wins list.'
+				text: 'Quick win: kept off the calendar (Settings ▸ Planner). It sits in Today’s Quick wins list.'
 			};
 		if (t.start === 'manual')
 			return { tone: 'plain', text: 'Manual start: the planner leaves this one to you.' };
@@ -671,6 +672,11 @@ class WorkspaceStore {
 			return {
 				tone: 'late',
 				text: `Blocked by ${waits.map((w) => w.ref).join(', ')}. It’s planned once that’s done.`
+			};
+		if (!placement && t.quick)
+			return {
+				tone: 'plain',
+				text: 'Quick win: waiting for a gap it fits in the next two weeks. It’s also in Today’s Quick wins list.'
 			};
 		if (!placement)
 			return {
@@ -688,7 +694,9 @@ class WorkspaceStore {
 				? `${at(first.date, first.start)}–${minToHM(last.end)}`
 				: `${b.length} blocks, ${at(first.date, first.start)} to ${at(last.date, last.end)}`
 		];
+		if (t.quick) parts.push('quick win fitted into spare time');
 		if (t.fixed) parts.push('kept where you dragged it');
+		else if (t.confirmed?.length) parts.push('confirmed by you');
 		else if (t.start === 'asap') parts.push('as soon as possible');
 		else if (t.start === 'date' && t.startDate) parts.push(`not before ${fmtShort(t.startDate)}`);
 		if (waits.length) parts.push(`after ${waits.map((w) => w.ref).join(', ')}`);
@@ -727,6 +735,7 @@ class WorkspaceStore {
 		this.#change((ws) => {
 			const x = ws.tasks.find((y) => y.id === id)!;
 			x.fixed = { date, start: s };
+			x.confirmed = null;
 			if (x.start === 'manual') x.start = 'auto';
 			// Moving the lit block: keep the minutes already spent, then let it go.
 			const a = ws.active;
@@ -754,8 +763,71 @@ class WorkspaceStore {
 
 	/** Hand a dragged task back to the planner. */
 	unfix(id: string) {
-		this.updateTask(id, { fixed: null });
+		this.updateTask(id, { fixed: null, confirmed: null });
 		toast('Back to automatic planning');
+	}
+
+	/** Whether every planned block of a task is locked in (confirmed or dragged). */
+	isLocked(t: Task | undefined) {
+		return !!t && (!!t.fixed || !!t.confirmed?.length);
+	}
+
+	/** Confirm a task's planned blocks: they become solid and stop moving. */
+	lockIn(id: string) {
+		const t = this.task(id);
+		const p = this.plan.placed[id];
+		if (!t || !p || t.status === 'done') return;
+		this.#change((ws) => {
+			const x = ws.tasks.find((y) => y.id === id)!;
+			x.confirmed = p.blocks.map((b) => ({ date: b.date, start: b.start, end: b.end }));
+			x.fixed = null;
+		});
+		toast(
+			`${code(t.code)} confirmed · ${p.blocks.length === 1 ? 'its block' : `${p.blocks.length} blocks`} won’t move`,
+			{
+				action: 'Undo',
+				onAction: () => this.undo()
+			}
+		);
+	}
+
+	/** Confirm every automatic block on these days, from now on. */
+	lockInDays(dates: string[]) {
+		const set = new Set(dates);
+		const ids = new Set(
+			this.plan.blocks
+				.filter(
+					(b) =>
+						set.has(b.date) &&
+						!(b.date === clock.today && b.end <= clock.minute) &&
+						!this.isLocked(this.task(b.taskId))
+				)
+				.map((b) => b.taskId)
+		);
+		if (!ids.size) {
+			toast('Everything here is already confirmed');
+			return;
+		}
+		// Take every block as shown now: confirming one task re-runs the planner,
+		// which would otherwise shift the rest before they're saved.
+		const shown = new Map(
+			[...ids].map((id) => [
+				id,
+				(this.plan.placed[id]?.blocks ?? [])
+					.filter((b) => set.has(b.date))
+					.map((b) => ({ date: b.date, start: b.start, end: b.end }))
+			])
+		);
+		this.#change((ws) => {
+			for (const [id, blocks] of shown) {
+				const x = ws.tasks.find((y) => y.id === id);
+				if (x && blocks.length) x.confirmed = blocks;
+			}
+		});
+		toast(`Confirmed ${ids.size} task${ids.size === 1 ? '' : 's'} · they won’t move`, {
+			action: 'Undo',
+			onAction: () => this.undo()
+		});
 	}
 
 	/** Whether the plan allows another project or goal. */

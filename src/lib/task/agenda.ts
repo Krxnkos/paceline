@@ -22,6 +22,10 @@ export interface AgendaItem {
 	confirm?: boolean;
 	/** Dragged to this time by hand. */
 	fixed?: boolean;
+	/** Confirmed by the person: a solid block that won't move. */
+	confirmed?: boolean;
+	/** A quick win fitted into spare time. */
+	quick?: boolean;
 	/** Reserved time: the category it's kept for. */
 	category?: Category;
 }
@@ -71,8 +75,12 @@ export function agendaFor(
 			end: b.end,
 			title: t.title,
 			task: t,
-			pinned: t.start === 'date' || t.start === 'asap' || !!t.fixed,
+			pinned: t.start === 'date' || t.start === 'asap' || !!t.fixed || !!t.confirmed?.length,
 			fixed: t.fixed?.date === date && t.fixed.start === b.start,
+			confirmed: !!t.confirmed?.some(
+				(c) => c.date === date && b.start >= c.start && b.end <= c.end
+			),
+			quick: !!t.quick,
 			state: state(b.start, b.end)
 		});
 	}

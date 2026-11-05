@@ -132,11 +132,12 @@
 			>
 				<span class="{label} flex items-center justify-between gap-2"
 					>Where it shows up
-					{#if task.fixed && task.status !== 'done'}
+					{#if workspace.isLocked(task) && task.status !== 'done'}
 						<button
 							type="button"
 							class="font-mono text-[10.5px] tracking-[0.08em] text-ink-3 uppercase underline hover:text-ink"
-							onclick={() => workspace.unfix(task.id)}>Moved by hand · release</button
+							onclick={() => workspace.unfix(task.id)}
+							>{task.fixed ? 'Moved by hand' : 'Confirmed'} · release</button
 						>
 					{/if}
 				</span>
@@ -157,12 +158,21 @@
 							>{/if}
 					</div>
 				{/if}
+				{#if placement && task.status !== 'done' && !workspace.isLocked(task)}
+					<Button
+						size="sm"
+						variant="secondary"
+						icon="check"
+						onclick={() => workspace.lockIn(task.id)}
+						>Confirm {placement.blocks.length === 1 ? 'this time' : 'these times'}</Button
+					>
+				{/if}
 				{#if task.status !== 'done'}
 					<Toggle
 						label="Quick win"
 						hint={task.quick
-							? 'on: kept off the calendar. Turn off to plan it.'
-							: 'never put on the calendar'}
+							? 'only fills spare time. Turn off to plan it like other work.'
+							: 'only fills spare time between other work'}
 						checked={!!task.quick}
 						onchange={(v) =>
 							workspace.updateTask(task.id, v ? { quick: true } : { quick: false, inbox: false })}

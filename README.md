@@ -28,9 +28,10 @@ Built from the _Paceline — Web App Design_ canvas: identity, six colour themes
 - **Auto-scheduler** (`src/lib/domain/plan.ts`): places work by score into free time, after dependencies, never
   before a start date, keeping a buffer free. Admin and Comms prefer afternoons. Reserved time
   (Settings) is kept for one category, and blocks dragged on Today or Week stay where they're dropped.
+  Quick wins fill the gaps left over and any reserved time its category didn't need.
 - **Today**: the lead block with a Pomodoro ring, schedule, must-dos 1–3 (4–5 unlock afterwards), quick wins and
   alerts.
-- **Week** time grid (drag a block to move it, double-click to pin or release it), **Board** with WIP limit and drag & drop, **Table** with
+- **Week** time grid (drag a block to move it, **Confirm** blocks to make them solid, double-click to release them), **Board** with WIP limit and drag & drop, **Table** with
   sorting, grouping, inline edit and bulk actions, **Timeline** Gantt with dependency arrows, **Calendar** with
   drag-to-reschedule, **Projects** with health, **Goals** with pace against a straight line, and **Insights**
   with this week against last, 14 days of focus, the week ahead and where the time went.
