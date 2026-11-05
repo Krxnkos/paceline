@@ -14,7 +14,7 @@
 	import { clock } from '#lib/stores/clock.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { agendaFor, type AgendaItem } from '#lib/task/agenda.ts';
-	import { fmtHours, fmtLong, minToHM, patternFor } from '#lib/domain/dates.ts';
+	import { DOW_SHORT, dow, fmtHours, fmtLong, minToHM, patternFor } from '#lib/domain/dates.ts';
 	import { bookedMin, dayCapacity, freeIntervals } from '#lib/domain/plan.ts';
 	import { mustDos, urgency } from '#lib/domain/forecast.ts';
 	import { labelBar } from '#lib/ui/styles.ts';
@@ -87,7 +87,10 @@
 			) as [number, number][];
 		const g = free.find(([a, b]) => b - a >= 10);
 		if (!g) return null;
-		const fits = quick.find((t) => t.status !== 'done' && t.estimateMin <= g[1] - g[0]) ?? null;
+		const fits =
+			quick.find(
+				(t) => t.status !== 'done' && !workspace.plan.placed[t.id] && t.estimateMin <= g[1] - g[0]
+			) ?? null;
 		return { start: g[0], fits };
 	});
 
@@ -160,11 +163,25 @@
 				meta: `${a.task!.category.toUpperCase()} · ENDS ${minToHM(a.end)} · ${a.end - clock.minute} MIN LEFT`,
 				time: 'text-accent-text'
 			};
+		if (a.confirmed || a.fixed)
+			return {
+				box: 'border-2 border-ink bg-raised text-ink font-semibold',
+				tag: a.fixed ? 'MOVED' : 'CONFIRMED',
+				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN${a.quick ? ' · QUICK WIN' : ''}`,
+				time: 'text-ink-2'
+			};
 		if (a.pinned)
 			return {
 				box: 'border-ink text-ink font-semibold',
-				tag: a.fixed ? 'MOVED' : a.task?.start === 'asap' ? 'ASAP' : 'PINNED',
+				tag: a.task?.start === 'asap' ? 'ASAP' : 'PINNED',
 				meta: `${a.task!.category.toUpperCase()} · ${mins} MIN`,
+				time: 'text-muted'
+			};
+		if (a.quick)
+			return {
+				box: 'border-dotted border-ink-3 text-ink-2 font-medium',
+				tag: 'QUICK WIN',
+				meta: `FILLS A GAP · ${mins} MIN`,
 				time: 'text-muted'
 			};
 		return {
@@ -185,6 +202,13 @@
 		a.kind === 'meeting' || a.kind === 'lunch' ? a.end : Math.max(a.start, clock.minute);
 	const canDrop = (a: AgendaItem) =>
 		!!dragId && a.task?.id !== dragId && a.state !== 'past' && !a.history;
+
+	/** When a quick win is fitted in: a time today, else the day. */
+	function quickAt(id: string): string {
+		const b = workspace.plan.placed[id]?.blocks[0];
+		if (!b) return '';
+		return b.date === today ? minToHM(b.start) : DOW_SHORT[dow(b.date)].toUpperCase();
+	}
 
 	function replan() {
 		const n = (workspace.plan.byDate[today] ?? []).length;
@@ -217,7 +241,9 @@
 				>Undo</Button
 			>
 			<Button size="lg" href="/week">Plan week</Button>
-			<Button size="lg" variant="primary" iconRight="arrowRight" onclick={replan}>Plan today</Button
+			<Button size="lg" onclick={replan}>Plan today</Button>
+			<Button size="lg" variant="primary" icon="check" onclick={() => workspace.lockInDays([today])}
+				>Confirm today</Button
 			>
 		{/snippet}
 	</PageHead>
@@ -262,7 +288,18 @@
 							dragId = dropKey = null;
 						}}
 					>
-						<span class="pt-[9px] font-mono text-xs {st.time}">{minToHM(a.start)}</span>
+						<span class="flex flex-col items-start gap-1.5 pt-[9px]">
+							<span class="font-mono text-xs {st.time}">{minToHM(a.start)}</span>
+							{#if movable(a) && !workspace.isLocked(a.task)}
+								<button
+									type="button"
+									class="font-mono text-[9.5px] tracking-[0.06em] text-muted uppercase underline decoration-dotted underline-offset-2 hover:text-ink"
+									title="Make this block solid so it won’t move"
+									aria-label="Confirm {a.title}"
+									onclick={() => workspace.lockIn(a.task!.id)}>Confirm</button
+								>
+							{/if}
+						</span>
 						<button
 							type="button"
 							disabled={a.kind === 'lunch' || a.kind === 'reserved'}
@@ -272,7 +309,8 @@
 								e.dataTransfer?.setData('text/plain', a.task!.id);
 							}}
 							ondragend={() => (dragId = dropKey = null)}
-							ondblclick={() => a.task?.fixed && !a.history && workspace.unfix(a.task.id)}
+							ondblclick={() =>
+								!a.history && workspace.isLocked(a.task) && workspace.unfix(a.task!.id)}
 							onclick={() => (a.task ? openTask(a.task.id) : null)}
 							title={movable(a)
 								? 'Drag onto another block to swap · double-click to release a moved block'
@@ -321,7 +359,8 @@
 				{/each}
 				{#if agenda.some(movable)}
 					<p class="m-0 pt-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">
-						Drag a block onto another to swap them · double-click a moved block to release it
+						Confirm makes a block solid · drag one onto another to swap · double-click a solid block
+						to release it
 					</p>
 				{/if}
 			</div>
@@ -406,7 +445,10 @@
 				{/if}
 			</Panel>
 
-			<Panel title="Quick wins · never auto-scheduled" meta="{quickOpenMin} min open">
+			<Panel
+				title={s.fillQuickWins === false ? 'Quick wins' : 'Quick wins · fill free time'}
+				meta="{quickOpenMin} min open"
+			>
 				{#each quick as q (q.id)}
 					{@const done = q.status === 'done'}
 					<div
@@ -426,7 +468,7 @@
 								: 'text-ink hover:underline'}">{q.title}</button
 						>
 						<span class="font-mono text-[11px] {done ? 'text-accent-text' : 'text-muted'}"
-							>{done ? 'DONE · ' : ''}{q.estimateMin} MIN</span
+							>{done ? 'DONE · ' : quickAt(q.id) ? `${quickAt(q.id)} · ` : ''}{q.estimateMin} MIN</span
 						>
 					</div>
 				{:else}

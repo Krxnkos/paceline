@@ -115,13 +115,15 @@ describe('plan', () => {
 		if (pb.startDate === pa.endDate) expect(pb.blocks[0].start).toBeGreaterThanOrEqual(pa.endMin);
 	});
 
-	it('leaves quick wins, inbox and manual tasks unscheduled', () => {
+	it('leaves inbox and manual tasks unscheduled, and quick wins out of the main plan', () => {
 		const ts = [
-			newTask(1, TODAY, { quick: true }),
+			newTask(1, TODAY, { quick: true, start: 'manual' }),
 			newTask(2, TODAY, { inbox: true }),
-			newTask(3, TODAY, { start: 'manual' })
+			newTask(3, TODAY, { start: 'manual' }),
+			newTask(4, TODAY, { quick: true })
 		];
-		expect(buildPlan(ts, [], settings, NOW).blocks).toHaveLength(0);
+		const plan = buildPlan(ts, [], { ...settings, fillQuickWins: false }, NOW);
+		expect(plan.blocks).toHaveLength(0);
 	});
 });
 
@@ -318,5 +320,99 @@ describe('daily focus', () => {
 			]
 		});
 		expect(dailyFocus([t], '2026-10-26', TODAY).map((d) => d.minutes)).toEqual([30, 0, 45]);
+	});
+});
+
+describe('quick wins', () => {
+	const settings = defaultSettings();
+	const TOMORROW = '2026-10-29';
+
+	it('fill the first gap they fit, whole', () => {
+		const q = newTask(1, TODAY, { quick: true, estimateMin: 10, title: 'Reply to Sam' });
+		const plan = buildPlan([q], [], settings, NOW);
+		expect(plan.placed[q.id]!.blocks).toEqual([
+			{ taskId: q.id, date: TODAY, start: 615, end: 625 } // the current quarter-hour
+		]);
+	});
+
+	it('go after the planned work, never in front of it', () => {
+		const work = newTask(1, TODAY, { estimateMin: 60, priority: 1 });
+		const q = newTask(2, TODAY, { quick: true, estimateMin: 10 });
+		const plan = buildPlan([work, q], [], settings, NOW);
+		expect(plan.placed[work.id]!.blocks[0].start).toBe(615);
+		expect(plan.placed[q.id]!.blocks[0].start).toBe(675);
+	});
+
+	it('use reserved time its own category left empty', () => {
+		const s = {
+			...settings,
+			reserved: [
+				{
+					id: 'r',
+					label: 'Admin',
+					category: 'Admin' as const,
+					start: 'start' as const,
+					minutes: 20,
+					days: [4] as (0 | 1 | 2 | 3 | 4 | 5 | 6)[]
+				}
+			]
+		};
+		// Fill today so the first room is tomorrow, where the Admin slot sits empty.
+		const big = newTask(1, TODAY, { estimateMin: 2000, priority: 1 });
+		const q = newTask(2, TODAY, { quick: true, estimateMin: 15, category: 'Comms' });
+		const plan = buildPlan([big, q], [], { ...s, bufferPct: 0 }, NOW);
+		expect(plan.placed[q.id]!.blocks[0]).toMatchObject({ date: TOMORROW, start: 465, end: 480 });
+	});
+
+	it('stay off the calendar when filling is turned off', () => {
+		const q = newTask(1, TODAY, { quick: true, estimateMin: 10 });
+		expect(buildPlan([q], [], { ...settings, fillQuickWins: false }, NOW).placed[q.id]).toBe(
+			undefined
+		);
+	});
+});
+
+describe('confirmed blocks', () => {
+	const settings = defaultSettings();
+
+	it('stay exactly where they were confirmed, and the rest is still planned', () => {
+		const t = newTask(1, TODAY, {
+			estimateMin: 90,
+			confirmed: [{ date: TODAY, start: 14 * 60, end: 15 * 60 }]
+		});
+		const other = newTask(2, TODAY, { estimateMin: 300, priority: 1 });
+		const plan = buildPlan([t, other], [], settings, NOW);
+		const mine = plan.placed[t.id]!.blocks;
+		expect(mine).toContainEqual({ taskId: t.id, date: TODAY, start: 840, end: 900 });
+		expect(mine.reduce((n, b) => n + b.end - b.start, 0)).toBe(90);
+		for (const b of plan.placed[other.id]!.blocks)
+			expect(b.date === TODAY && b.start < 900 && b.end > 840).toBe(false);
+	});
+
+	it('leave the plan as it was: confirming a day pulls no extra work into it', () => {
+		const ts = [
+			newTask(1, TODAY, { estimateMin: 200, priority: 1 }),
+			newTask(2, TODAY, { estimateMin: 200, priority: 2 })
+		];
+		const plan = buildPlan(ts, [], settings, NOW);
+		const today = (p: typeof plan) =>
+			(p.byDate[TODAY] ?? []).map((b) => [b.taskId, b.start, b.end]);
+		const locked = ts.map((t) => ({
+			...t,
+			confirmed: plan.placed[t.id]!.blocks.filter((b) => b.date === TODAY).map(
+				({ date, start, end }) => ({ date, start, end })
+			)
+		}));
+		expect(today(buildPlan(locked, [], settings, NOW))).toEqual(today(plan));
+	});
+
+	it('shrink when less work is left than was confirmed', () => {
+		const t = newTask(1, TODAY, {
+			estimateMin: 30,
+			confirmed: [{ date: TODAY, start: 14 * 60, end: 15 * 60 }]
+		});
+		expect(buildPlan([t], [], settings, NOW).placed[t.id]!.blocks).toEqual([
+			{ taskId: t.id, date: TODAY, start: 840, end: 870 }
+		]);
 	});
 });

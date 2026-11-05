@@ -5,6 +5,7 @@
 	import Field from '#lib/ui/Field.svelte';
 	import Select from '#lib/ui/Select.svelte';
 	import Button from '#lib/ui/Button.svelte';
+	import Toggle from '#lib/ui/Toggle.svelte';
 	import ConfirmButton from '#lib/ui/ConfirmButton.svelte';
 	import ThemePicker from '#lib/ui/ThemePicker.svelte';
 	import PlanBadge from '#lib/ui/PlanBadge.svelte';
@@ -243,6 +244,18 @@
 						workspace.updateSettings({ breakMin: num(e.currentTarget.value, 1, 60) })}
 				/>
 			</Field>
+			<div class="flex flex-col gap-1 sm:col-span-2">
+				<Toggle
+					label="Fill free time with quick wins"
+					hint="gaps and reserved time nobody needed"
+					checked={s.fillQuickWins !== false}
+					onchange={(v) => workspace.updateSettings({ fillQuickWins: v })}
+				/>
+				<span class="text-[13px] text-muted"
+					>Quick wins go in after everything else is planned, and may use the buffer. Confirm a day
+					on Today or Week to stop its blocks moving.</span
+				>
+			</div>
 			<div class="flex flex-col gap-2 sm:col-span-2">
 				<span class="eyebrow">Notifications</span>
 				<div class="flex flex-wrap items-center gap-3">

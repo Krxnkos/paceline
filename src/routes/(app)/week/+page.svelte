@@ -94,12 +94,17 @@
 			>
 			<Button
 				size="lg"
-				variant="primary"
-				iconRight="arrowRight"
 				onclick={() => {
 					const n = workDays.reduce((k, d) => k + (workspace.plan.byDate[d]?.length ?? 0), 0);
 					toast(`Week re-planned · ${n} blocks · ${noRoom.length} with no room`);
 				}}>Plan week</Button
+			>
+			<Button
+				size="lg"
+				variant="primary"
+				icon="check"
+				onclick={() => workspace.lockInDays(days.filter((d) => d >= clock.today))}
+				>Confirm week</Button
 			>
 		{/snippet}
 	</PageHead>
@@ -113,7 +118,15 @@
 				may move</span
 			>
 			<span class="flex items-center gap-2"
-				><span class="inline-block h-2.5 w-[18px] border border-ink"></span>Pinned or moved</span
+				><span class="inline-block h-2.5 w-[18px] border-2 border-ink bg-raised"></span>Confirmed or
+				moved</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] border border-ink"></span>Pinned</span
+			>
+			<span class="flex items-center gap-2"
+				><span class="inline-block h-2.5 w-[18px] border border-dotted border-ink-3"></span>Quick
+				win</span
 			>
 			<span class="flex items-center gap-2"
 				><span class="inline-block h-2.5 w-[18px] bg-accent"></span>Lit block</span
@@ -142,8 +155,9 @@
 			>
 		</div>
 		<p class="m-0 text-[13px] text-muted">
-			Drag a block to any time this week to keep it there. Double-click a moved block to hand it
-			back to the planner. Open a task to see why it landed where it did.
+			Auto blocks can still move as plans change. <strong class="text-ink-2">Confirm week</strong>
+			(or Confirm on a task) turns them solid so they stay put, and quick wins fill the gaps left over.
+			Drag a block to move it; double-click a confirmed or moved block to hand it back to the planner.
 		</p>
 	</div>
 

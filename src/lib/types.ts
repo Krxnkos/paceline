@@ -66,6 +66,8 @@ export interface Task {
 	labels?: string[];
 	/** Dragged to a fixed start on the calendar; the planner keeps it there. */
 	fixed?: { date: ISODate; start: number } | null;
+	/** Planned blocks the person confirmed: kept exactly where they are. */
+	confirmed?: { date: ISODate; start: number; end: number }[] | null;
 }
 
 /** Time set aside every week for one category, e.g. 20 minutes of Admin at the start of each day. */
@@ -152,6 +154,8 @@ export interface Settings {
 	focusMode?: 'fixed' | 'fit';
 	leave: ISODate[];
 	reserved?: Reserved[];
+	/** Put quick wins into leftover gaps and unused reserved time (on unless turned off). */
+	fillQuickWins?: boolean;
 }
 
 export interface Block {

@@ -73,7 +73,9 @@
 			return 'border border-flare bg-flare/12 text-flare font-semibold';
 		if (d === clock.today && a.state === 'now') return 'bg-accent text-accent-ink font-extrabold';
 		if (a.state === 'past') return 'border border-line bg-canvas text-faint';
+		if (a.confirmed || a.fixed) return 'border-2 border-ink bg-raised text-ink font-semibold';
 		if (a.pinned) return 'border border-ink bg-canvas text-ink font-semibold';
+		if (a.quick) return 'border border-dotted border-ink-3 bg-canvas text-ink-2 hover:border-ink';
 		return 'border border-dashed border-line-3 bg-canvas text-ink-2 italic hover:border-ink-3';
 	}
 
@@ -86,7 +88,15 @@
 		const waits = workspace.waitsOn(a.task);
 		if (waits.length) return `BLOCKED · WAITS ON ${waits.map((w) => w.ref).join(', ')}`;
 		if (d === clock.today && a.state === 'now') return `NOW · ${a.end - clock.minute} MIN LEFT`;
-		const kind = a.fixed ? 'MOVED' : a.pinned ? 'PINNED' : 'AUTO';
+		const kind = a.fixed
+			? 'MOVED'
+			: a.confirmed
+				? 'CONFIRMED'
+				: a.pinned
+					? 'PINNED'
+					: a.quick
+						? 'QUICK WIN'
+						: 'AUTO';
 		return `${kind} · ${a.task!.category.toUpperCase()} · ${minToHM(a.start)}–${minToHM(a.end)}`;
 	}
 
@@ -130,7 +140,7 @@
 	function togglePin(a: AgendaItem, d: ISODate) {
 		const t = a.task;
 		if (!t || a.history) return;
-		if (t.fixed) {
+		if (workspace.isLocked(t)) {
 			workspace.unfix(t.id);
 		} else if (t.start === 'date') {
 			workspace.updateTask(t.id, { start: 'auto', startDate: null });

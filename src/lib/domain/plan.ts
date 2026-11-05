@@ -21,6 +21,8 @@ import {
 } from './dates.ts';
 
 export const HORIZON_DAYS = 120;
+/** Quick wins are only fitted into the next two weeks. */
+const QUICK_DAYS = 14;
 const MIN_CHUNK = 15;
 const AFTERNOON = 12 * 60;
 
@@ -86,6 +88,24 @@ export function remainingMin(t: Task): number {
 	if (t.status === 'done') return 0;
 	const est = t.estimateMin > 0 ? t.estimateMin : 30;
 	return Math.max(MIN_CHUNK, est - Math.max(t.loggedMin, t.creditMin ?? 0));
+}
+
+/** Minutes a quick win needs: its own estimate (15 if none), never under 5. */
+export function quickMin(t: Task): number {
+	if (t.status === 'done') return 0;
+	const est = t.estimateMin > 0 ? t.estimateMin : 15;
+	return Math.max(5, est - Math.max(t.loggedMin, t.creditMin ?? 0));
+}
+
+/** A quick win the planner may fit into spare time. */
+export function isFillable(t: Task, settings: Settings): boolean {
+	return (
+		settings.fillQuickWins !== false &&
+		!!t.quick &&
+		t.status !== 'done' &&
+		!t.inbox &&
+		t.start !== 'manual'
+	);
 }
 
 /** Higher runs first. Shared by the planner, must-dos and the table's default sort. */
@@ -217,17 +237,24 @@ export function buildPlan(
 		// A day is either work or personal, never both, so one state per date is enough.
 		const full = (personal ? personalIntervals : freeIntervals)(settings, meetings, date);
 		const fullFree = total(full);
-		const cut = (iv: Interval[]) => {
-			let out = date === today ? subtract(iv, 0, nm) : iv;
-			for (const h of taken) if (h.date === date) out = subtract(out, h.start, h.end);
+		const cut = (iv: Interval[], list: { date: ISODate; start: number; end: number }[]) => {
+			let out = iv;
+			for (const h of list) if (h.date === date) out = subtract(out, h.start, h.end);
 			return out;
 		};
-		const free = cut(full);
+		const now0 = (iv: Interval[]) => (date === today ? subtract(iv, 0, nm) : iv);
+		const base = cut(now0(full), taken);
+		const free = cut(base, pinned);
 		const reserved = new Map<Category, Interval[]>();
 		if (!personal)
-			for (const [c, iv] of reservedIntervals(settings, meetings, date)) reserved.set(c, cut(iv));
-		const remain = total(free);
-		const budget = fullFree ? Math.round(remain * (1 - settings.bufferPct / 100)) : 0;
+			for (const [c, iv] of reservedIntervals(settings, meetings, date))
+				reserved.set(c, cut(cut(now0(iv), taken), pinned));
+		// The buffer is worked out before confirmed and dragged blocks, which then count
+		// against the day's plannable time like any other work.
+		const pinnedHere = total(base) - total(free);
+		const budget = fullFree
+			? Math.max(0, Math.round(total(base) * (1 - settings.bufferPct / 100)) - pinnedHere)
+			: 0;
 		d = { free, budget, reserved };
 		days.set(date, d);
 		return d;
@@ -250,25 +277,51 @@ export function buildPlan(
 			return !openIds.has(tid);
 		});
 
-	// Tasks dragged to a start time claim that slot before anything else is placed.
-	const fixed = new Map<string, Block>();
-	for (const t of open) {
+	const quick = tasks
+		.filter((t) => isFillable(t, settings))
+		.sort((a, b) => score(b, today) - score(a, today));
+	const need = (t: Task) => (t.quick ? quickMin(t) : remainingMin(t));
+
+	// Blocks the person placed by hand claim their time before anything else:
+	// a dragged task (one block from where it was dropped) or confirmed blocks.
+	const pins = new Map<string, Block[]>();
+	const pinned: Block[] = [];
+	const ok = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+	for (const t of [...open, ...quick]) {
+		if (blocked(t)) continue;
+		const out: Block[] = [];
 		const f = t.fixed;
-		if (
-			!f ||
-			typeof f.date !== 'string' ||
-			typeof f.start !== 'number' ||
-			!Number.isFinite(f.start) ||
-			f.date < today ||
-			live?.taskId === t.id ||
-			blocked(t)
-		)
-			continue;
-		const end = Math.min(f.start + remainingMin(t), 24 * 60);
-		if (f.date === today && end <= nowMin(now)) continue;
-		const b: Block = { taskId: t.id, date: f.date, start: f.start, end };
-		fixed.set(t.id, b);
-		taken.push(b);
+		if (f && typeof f.date === 'string' && ok(f.start) && f.date >= today) {
+			if (live?.taskId === t.id) continue;
+			const end = Math.min(f.start + need(t), 24 * 60);
+			if (f.date > today || end > nowMin(now))
+				out.push({ taskId: t.id, date: f.date, start: f.start, end });
+		} else if (Array.isArray(t.confirmed)) {
+			let left = need(t) - (live?.taskId === t.id ? live.end - live.start : 0);
+			const list = t.confirmed
+				.filter(
+					(c) => c && typeof c.date === 'string' && ok(c.start) && ok(c.end) && c.end > c.start
+				)
+				.sort((a, b) => (a.date === b.date ? a.start - b.start : a.date < b.date ? -1 : 1));
+			for (const c of list) {
+				if (left <= 0) break;
+				if (c.date < today || (c.date === today && c.end <= nowMin(now))) continue;
+				// The lit block already covers this one.
+				if (
+					live?.taskId === t.id &&
+					c.date === live.date &&
+					c.start < live.end &&
+					c.end > live.start
+				)
+					continue;
+				const end = Math.min(c.end, c.start + left);
+				out.push({ taskId: t.id, date: c.date, start: c.start, end });
+				left -= end - c.start;
+			}
+		}
+		if (!out.length) continue;
+		pins.set(t.id, out);
+		pinned.push(...out);
 	}
 
 	const queue = [...open];
@@ -303,10 +356,11 @@ export function buildPlan(
 			mine.push({ taskId: t.id, date: live.date, start: live.start, end: live.end });
 			r = Math.max(0, r - (live.end - live.start));
 		}
-		const fx = fixed.get(t.id);
-		if (fx) {
-			mine.push(fx);
-			r = 0;
+		const pin = pins.get(t.id);
+		if (pin) {
+			mine.push(...pin);
+			// A dragged task is one block; confirmed blocks may leave some still to plan.
+			r = t.fixed ? 0 : Math.max(0, r - pin.reduce((n, b) => n + b.end - b.start, 0));
 		}
 		const afternoonFirst = t.category === 'Admin' || t.category === 'Comms';
 		for (let i = Math.max(0, diffDays(earliestDate, today)); i < HORIZON_DAYS && r > 0; i++) {
@@ -347,6 +401,48 @@ export function buildPlan(
 		if (r > 0 || !mine.length) {
 			placed[t.id] = null;
 			beyond.push(t.id);
+			continue;
+		}
+		mine.sort((a, b) => (a.date === b.date ? a.start - b.start : a.date < b.date ? -1 : 1));
+		const last = mine[mine.length - 1];
+		placed[t.id] = { startDate: mine[0].date, endDate: last.date, endMin: last.end, blocks: mine };
+		blocks.push(...mine);
+	}
+
+	// Quick wins fill what's left: spare reserved time nobody needed, then gaps,
+	// earliest first. Each goes in whole or waits for a gap it fits.
+	for (const t of quick) {
+		if (blocked(t)) {
+			placed[t.id] = null;
+			continue;
+		}
+		const pin = pins.get(t.id);
+		const mine: Block[] = [...(pin ?? [])];
+		if (live?.taskId === t.id) mine.push({ ...live, taskId: t.id });
+		if (!mine.length) {
+			const len = quickMin(t);
+			const personal = t.scope === 'personal';
+			for (let i = 0; i < QUICK_DAYS && !mine.length; i++) {
+				const date = addDays(today, i);
+				if (t.start === 'date' && t.startDate && date < t.startDate) continue;
+				if (personal !== isPersonalDay(settings, date)) continue;
+				const d = day(date, personal);
+				const spots = [
+					...[...d.reserved].flatMap(([cat, iv]) => iv.map((x) => ({ x, cat }))),
+					...d.free.map((x) => ({ x, cat: null as Category | null }))
+				]
+					.filter(({ x }) => x[1] - x[0] >= len)
+					.sort((p, q) => p.x[0] - q.x[0] || (p.cat ? -1 : 1));
+				const s = spots[0];
+				if (!s) continue;
+				const [a] = s.x;
+				mine.push({ taskId: t.id, date, start: a, end: a + len });
+				if (s.cat) d.reserved.set(s.cat, subtract(d.reserved.get(s.cat)!, a, a + len));
+				else d.free = subtract(d.free, a, a + len);
+			}
+		}
+		if (!mine.length) {
+			placed[t.id] = null;
 			continue;
 		}
 		mine.sort((a, b) => (a.date === b.date ? a.start - b.start : a.date < b.date ? -1 : 1));
