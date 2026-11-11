@@ -11,10 +11,12 @@
 		hmToMin,
 		minToHM,
 		parseISO,
+		awayLabel,
 		patternFor
 	} from '../domain/dates.ts';
 	import { bookedMin, dayCapacity } from '../domain/plan.ts';
 	import { labelBar } from '../ui/styles.ts';
+	import { pointerDrag } from '../ui/pointerDrag.ts';
 	import type { ISODate } from '../types.ts';
 
 	let { days }: { days: ISODate[] } = $props();
@@ -101,40 +103,72 @@
 	}
 
 	// ── Drag a block to a new day and time ────────────────────
+	// The block follows the pointer, snaps to 15 minutes, and lands exactly where
+	// the preview shows. Escape cancels.
 	const SNAP = 15;
-	let drag = $state<{ id: string; grab: number; len: number } | null>(null);
-	let ghost = $state<{ d: ISODate; start: number } | null>(null);
+	let drag = $state<{
+		id: string;
+		title: string;
+		len: number;
+		grab: number;
+		d: ISODate;
+		start: number;
+		ok: boolean;
+	} | null>(null);
+	let cols: HTMLElement[] = $state([]);
+	let scroller: HTMLElement | undefined = $state();
 
 	const draggable = (a: AgendaItem) =>
 		a.kind === 'block' && !a.history && !!a.task && a.task.status !== 'done';
 
-	function dragStart(e: DragEvent, a: AgendaItem) {
-		const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		drag = { id: a.task!.id, grab: (e.clientY - box.top) / PX, len: a.end - a.start };
-		e.dataTransfer?.setData('text/plain', a.task!.id);
-		if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+	function place(x: number, yPx: number) {
+		if (!drag) return;
+		let i = cols.findIndex((c) => {
+			const r = c.getBoundingClientRect();
+			return x >= r.left && x < r.right;
+		});
+		if (i < 0) {
+			const first = cols[0]?.getBoundingClientRect();
+			i = first && x < first.left ? 0 : cols.length - 1;
+		}
+		const col = cols[i]?.getBoundingClientRect();
+		if (!col) return;
+		const d = days[i];
+		const raw = range[0] + (yPx - col.top) / PX - drag.grab;
+		let start = Math.round(raw / SNAP) * SNAP;
+		start = Math.max(range[0], Math.min(start, range[1] - Math.min(drag.len, 60)));
+		if (d === clock.today) start = Math.max(start, Math.ceil(clock.minute / SNAP) * SNAP);
+		const ok = d >= clock.today;
+		if (drag.d !== d || drag.start !== start || drag.ok !== ok) drag = { ...drag, d, start, ok };
 	}
 
-	function dropAt(e: DragEvent): number {
-		const col = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		const m = range[0] + (e.clientY - col.top) / PX - (drag?.grab ?? 0);
-		return Math.max(range[0], Math.round(m / SNAP) * SNAP);
-	}
-
-	function over(e: DragEvent, d: ISODate) {
-		if (!drag || d < clock.today) return;
-		e.preventDefault();
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-		const start = dropAt(e);
-		if (ghost?.d !== d || ghost.start !== start) ghost = { d, start };
-	}
-
-	function drop(e: DragEvent, d: ISODate) {
-		if (!drag || d < clock.today) return;
-		e.preventDefault();
-		workspace.moveTo(drag.id, d, dropAt(e));
-		drag = null;
-		ghost = null;
+	function dragFor(a: AgendaItem, d: ISODate) {
+		return {
+			enabled: draggable(a),
+			scroll: () => [scroller],
+			callbacks: {
+				start: (e: PointerEvent, origin: { x: number; y: number }, node: HTMLElement) => {
+					const box = node.getBoundingClientRect();
+					drag = {
+						id: a.task!.id,
+						title: a.title,
+						len: a.end - a.start,
+						grab: (origin.y - box.top) / PX,
+						d,
+						start: a.start,
+						ok: true
+					};
+					place(e.clientX, e.clientY);
+				},
+				move: (e: PointerEvent) => place(e.clientX, e.clientY),
+				end: (_e: PointerEvent | null, cancelled: boolean) => {
+					const g = drag;
+					drag = null;
+					if (!g || cancelled || !g.ok) return;
+					workspace.moveTo(g.id, g.d, g.start);
+				}
+			}
+		};
 	}
 
 	function togglePin(a: AgendaItem, d: ISODate) {
@@ -156,7 +190,7 @@
 		const cap = dayCapacity(s, workspace.meetings, d);
 		const booked = bookedMin(workspace.plan, d);
 		const isToday = d === clock.today;
-		const label = `${DOW_SHORT[dow(d)].toUpperCase()}${isToday ? ' · TODAY' : p.kind === 'personal' ? ' · PERSONAL' : p.kind === 'uni' ? ' · UNIVERSITY' : s.leave.includes(d) ? ' · LEAVE' : p.kind === 'off' ? ' · OFF' : p.kind === 'work' && hmToMin(p.end) - hmToMin(p.start) < 360 ? ' · HALF' : ''}`;
+		const label = `${DOW_SHORT[dow(d)].toUpperCase()}${isToday ? ' · TODAY' : p.kind === 'personal' ? ' · PERSONAL' : p.kind === 'uni' ? ` · ${awayLabel(p).toUpperCase()}` : s.leave.includes(d) ? ' · LEAVE' : p.kind === 'off' ? ' · OFF' : p.kind === 'work' && hmToMin(p.end) - hmToMin(p.start) < 360 ? ' · HALF' : ''}`;
 		const meta =
 			p.kind === 'personal'
 				? `${fmtHours(booked)} H PERSONAL`
@@ -167,7 +201,7 @@
 	}
 </script>
 
-<div class="min-w-0 overflow-x-auto border border-line">
+<div class="min-w-0 overflow-x-auto border border-line" bind:this={scroller}>
 	<div
 		class="grid min-w-[860px]"
 		style="grid-template-columns: 56px repeat({days.length}, minmax(0, 1fr))"
@@ -209,17 +243,13 @@
 			{@const h = header(d)}
 			{@const items = itemsFor(d)}
 			<div
+				bind:this={cols[i]}
 				role="list"
 				aria-label="{DOW_SHORT[dow(d)]} {parseISO(d).getDate()}"
 				class="relative {i < days.length - 1 ? 'border-r border-line' : ''} {h.isToday
 					? 'bg-panel'
 					: ''} {h.p.kind === 'uni' || (h.p.kind === 'off' && !items.length) ? 'hatch' : ''}"
 				style="height: {height}px"
-				ondragover={(e) => over(e, d)}
-				ondragleave={(e) => {
-					if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) ghost = null;
-				}}
-				ondrop={(e) => drop(e, d)}
 			>
 				{#each hours as m (m)}
 					<div
@@ -247,7 +277,7 @@
 								? 'text-lilac'
 								: 'text-muted'}"
 							>{h.p.kind === 'uni'
-								? 'UNIVERSITY'
+								? awayLabel(h.p).toUpperCase()
 								: s.leave.includes(d)
 									? 'LEAVE'
 									: 'NOT A WORK DAY'}</span
@@ -280,14 +310,11 @@
 					<button
 						type="button"
 						disabled={a.kind === 'lunch'}
-						draggable={draggable(a)}
-						ondragstart={(e) => dragStart(e, a)}
-						ondragend={() => ((drag = null), (ghost = null))}
-						class="absolute inset-x-1 overflow-hidden py-1 pr-2 text-left text-xs leading-tight disabled:cursor-default {labels.length
+						use:pointerDrag={dragFor(a, d)}
+						class="pl-block absolute inset-x-1 overflow-hidden py-1 pr-2 text-left text-xs leading-tight select-none disabled:cursor-default {labels.length
 							? 'pl-3'
-							: 'pl-2'} {draggable(a) ? 'cursor-grab active:cursor-grabbing' : ''} {drag &&
-						drag.id === a.task?.id
-							? 'opacity-40'
+							: 'pl-2'} {draggable(a) ? 'cursor-grab' : ''} {drag && drag.id === a.task?.id
+							? 'opacity-30'
 							: ''} {style(a, d)}"
 						style="top: {top}px; height: {hgt}px; {hgt < 22
 							? 'padding-top: 1px; font-size: 11px'
@@ -324,13 +351,18 @@
 					</button>
 				{/each}
 
-				{#if ghost?.d === d && drag}
+				{#if drag && drag.d === d}
 					<div
-						class="pointer-events-none absolute inset-x-1 z-10 border-2 border-dashed border-ink bg-ink/10"
-						style="top: {y(ghost.start)}px; height: {Math.max(16, drag.len * PX)}px"
+						class="pl-ghost shadow-xl pointer-events-none absolute inset-x-1 z-30 flex flex-col justify-between overflow-hidden px-2 py-1 text-xs leading-tight font-semibold {drag.ok
+							? 'border-2 border-ink bg-raised text-ink'
+							: 'border-2 border-dashed border-flare bg-flare/15 text-flare'}"
+						style="top: {y(drag.start)}px; height: {Math.max(18, drag.len * PX)}px"
 					>
-						<span class="absolute -top-4 left-0 bg-ink px-1 font-mono text-[9.5px] text-canvas"
-							>{minToHM(ghost.start)}</span
+						<span class="truncate">{drag.title}</span>
+						<span class="font-mono text-[10px] tracking-[0.06em] {drag.ok ? 'text-ink-2' : ''}"
+							>{drag.ok
+								? `${DOW_SHORT[dow(d)]} ${minToHM(drag.start)}–${minToHM(drag.start + drag.len)}`
+								: 'Can’t move into the past'}</span
 						>
 					</div>
 				{/if}

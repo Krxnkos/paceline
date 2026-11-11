@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Button from '../ui/Button.svelte';
-	import { focus, fmtClock } from '../stores/focus.svelte.ts';
+	import { FOCUS_PRESETS, focus, fmtClock, presetOf } from '../stores/focus.svelte.ts';
+	import type { FocusPreset } from '../types.ts';
 	import { workspace, openTask } from '../stores/workspace.svelte.ts';
 	import { ui } from '../stores/ui.svelte.ts';
 	import { fmtDur, minToHM, fmtShort } from '../domain/dates.ts';
@@ -24,14 +25,18 @@
 
 	const task = $derived(lead?.task ?? null);
 	const s = $derived(workspace.settings);
-	const fit = $derived(s.focusMode === 'fit');
+	const preset = $derived(presetOf(s));
+	const fit = $derived(preset === 'fit');
 	const leadLeft = $derived(
 		lead ? Math.max(1, lead.state === 'now' ? lead.end - clock.minute : lead.end - lead.start) : 0
 	);
-	const plannedMin = $derived(fit && lead ? leadLeft : s.focusMin);
+	const plannedMin = $derived(fit && lead ? leadLeft : focus.plannedMin());
 	const mine = $derived(!!task && focus.state?.taskId === task.id);
-	const total = $derived(mine && focus.state ? focus.state.total : plannedMin * 60);
-	const remain = $derived(mine ? focus.remaining : total);
+	// Flowtime counts up, so the ring shows time spent against a 50-minute lap.
+	const total = $derived(mine && focus.state ? focus.state.total : (plannedMin || 50) * 60);
+	const remain = $derived(
+		mine ? (focus.counting ? Math.max(0, 50 * 60 - focus.elapsed) : focus.remaining) : total
+	);
 	const r = 48;
 	const circ = 2 * Math.PI * r;
 	const frac = $derived(total ? remain / total : 1);
@@ -55,8 +60,13 @@
 	function setLength(min: number) {
 		workspace.updateSettings({
 			focusMin: Math.min(180, Math.max(1, Math.round(min) || 25)),
-			focusMode: 'fixed'
+			focusMode: 'fixed',
+			focusPreset: 'custom'
 		});
+	}
+
+	function setPreset(p: FocusPreset) {
+		workspace.updateSettings({ focusPreset: p, focusMode: p === 'fit' ? 'fit' : 'fixed' });
 	}
 
 	function toggle() {
@@ -150,35 +160,33 @@
 					>
 				</div>
 				{#if !mine}
-					<div role="group" aria-label="Focus length" class="flex flex-wrap items-center gap-1.5">
-						{#each [15, 25, 45, 60] as m (m)}
+					<div role="group" aria-label="Focus rhythm" class="flex flex-wrap items-center gap-1.5">
+						{#each Object.entries(FOCUS_PRESETS) as [id, p] (id)}
 							<button
 								type="button"
-								aria-pressed={!fit && s.focusMin === m}
-								onclick={() => setLength(m)}
-								class="h-8 border px-2 font-mono text-[11px] {!fit && s.focusMin === m
+								aria-pressed={preset === id}
+								title={p.hint}
+								onclick={() => setPreset(id as FocusPreset)}
+								class="h-8 border px-2 font-mono text-[11px] transition-colors {preset === id
 									? 'border-ink bg-ink text-canvas'
-									: 'border-line-3 text-ink-3 hover:text-ink'}">{m}m</button
+									: 'border-line-3 text-ink-3 hover:text-ink'}">{p.label}</button
 							>
 						{/each}
-						<input
-							type="number"
-							min="1"
-							max="180"
-							value={s.focusMin}
-							aria-label="Custom focus minutes"
-							onchange={(e) => setLength(Number(e.currentTarget.value))}
-							class="h-8 w-16 border border-line-3 bg-transparent px-2 font-mono text-[11px] text-ink"
-						/>
-						<button
-							type="button"
-							aria-pressed={fit}
-							onclick={() => workspace.updateSettings({ focusMode: fit ? 'fixed' : 'fit' })}
-							class="h-8 border px-2 font-mono text-[11px] uppercase {fit
-								? 'border-accent bg-accent text-accent-ink'
-								: 'border-line-3 text-ink-3 hover:text-ink'}">Fit the block</button
-						>
+						{#if preset === 'custom'}
+							<input
+								type="number"
+								min="1"
+								max="180"
+								value={s.focusMin}
+								aria-label="Custom focus minutes"
+								onchange={(e) => setLength(Number(e.currentTarget.value))}
+								class="h-8 w-16 border border-line-3 bg-transparent px-2 font-mono text-[11px] text-ink"
+							/>
+						{/if}
 					</div>
+					<span class="font-mono text-[10px] tracking-[0.06em] text-muted"
+						>{FOCUS_PRESETS[preset].hint}</span
+					>
 				{/if}
 			</div>
 		</div>

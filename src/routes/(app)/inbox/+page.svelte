@@ -1,5 +1,8 @@
 <script lang="ts">
 	import PageHead from '#lib/ui/PageHead.svelte';
+	import { flip } from 'svelte/animate';
+	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import CaptureBar from '#lib/task/CaptureBar.svelte';
 	import Panel from '#lib/ui/Panel.svelte';
 	import Checkbox from '#lib/ui/Checkbox.svelte';
@@ -12,7 +15,7 @@
 	import { code } from '#lib/domain/forecast.ts';
 	import { diffDays, fmtRelative } from '#lib/domain/dates.ts';
 	import { SYNTAX_REFERENCE } from '#lib/domain/parse.ts';
-	import { CATEGORIES, type Task } from '#lib/types.ts';
+	import type { Task } from '#lib/types.ts';
 
 	const items = $derived(
 		workspace.tasks.filter((t) => t.inbox && t.status !== 'done').sort((a, b) => a.code - b.code)
@@ -62,7 +65,12 @@
 	<div class="flex flex-wrap items-start gap-6">
 		<Panel title="To triage" meta={String(items.length).padStart(2, '0')} class="flex-[2_1_560px]">
 			{#each items as t (t.id)}
-				<div class="flex flex-col gap-2.5 border-b border-line px-[18px] py-3.5">
+				<div
+					class="flex flex-col gap-2.5 border-b border-line px-[18px] py-3.5"
+					animate:flip={{ duration: 240, easing: cubicOut }}
+					in:fly={{ y: -8, duration: 220 }}
+					out:fly={{ x: 40, duration: 200 }}
+				>
 					<div class="flex items-center gap-3">
 						<Checkbox
 							checked={false}
@@ -90,7 +98,7 @@
 						/>
 						<Select
 							value={t.category}
-							options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+							options={workspace.catNames.map((c) => ({ value: c, label: c }))}
 							aria-label="Category"
 							class="w-32 {small}"
 							onchange={(e) =>

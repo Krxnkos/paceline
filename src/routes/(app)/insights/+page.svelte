@@ -26,7 +26,8 @@
 		upcomingLoad
 	} from '#lib/domain/stats.ts';
 	import { blockers } from '#lib/domain/forecast.ts';
-	import { catSwatch, labelBar, panelHead } from '#lib/ui/styles.ts';
+	import { labelBar, panelHead } from '#lib/ui/styles.ts';
+	import { catSwatch } from '#lib/ui/categories.ts';
 
 	const today = $derived(clock.today);
 	const ws = $derived(weekStart(today));
@@ -72,7 +73,7 @@
 		Math.max(60, ...ahead.map((d) => Math.max(d.capacityMin, d.bookedMin)))
 	);
 	const kindLabel: Record<string, string> = {
-		uni: 'University',
+		uni: 'Away',
 		personal: 'Personal',
 		off: 'Day off'
 	};
@@ -112,7 +113,9 @@
 
 	// ── Where the time went · 30 days ─────────────────────────
 	const from30 = $derived(addDays(today, -29));
-	const cats = $derived(categoryHours(workspace.tasks, from30, today).filter((c) => c.hours > 0));
+	const cats = $derived(
+		categoryHours(workspace.tasks, from30, today, workspace.catNames).filter((c) => c.hours > 0)
+	);
 	const byProject = $derived(
 		[...hoursBy(workspace.tasks, from30, today, (t) => [t.projectId])].map(([id, hours]) => ({
 			name: id ? (workspace.project(id)?.name ?? 'Deleted project') : 'No project',
@@ -327,7 +330,7 @@
 			{#each cats as c (c.label)}
 				<div class="grid grid-cols-[96px_1fr_48px] items-center gap-3 py-2">
 					<span class="flex items-center gap-2 text-[13px]"
-						><span class="size-2 {catSwatch[c.label]}"></span>{c.label}</span
+						><span class="size-2 {catSwatch(c.label)}"></span>{c.label}</span
 					>
 					<div class="h-2.5 bg-panel">
 						<div class="h-2.5 bg-ink-3" style="width: {(c.hours / spentMax) * 100}%"></div>

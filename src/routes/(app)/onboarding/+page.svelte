@@ -5,9 +5,19 @@
 	import { workspace } from '#lib/stores/workspace.svelte.ts';
 	import { auth } from '#lib/stores/auth.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
+	import type { DailyMethod } from '#lib/types.ts';
+
+	const STYLES: { id: DailyMethod; name: string; blurb: string }[] = [
+		{ id: 'must3', name: 'Must-dos', blurb: 'Three things that make the day a win' },
+		{ id: 'frog', name: 'Eat the frog', blurb: 'Hardest task first thing' },
+		{ id: 'ivy', name: 'Ivy Lee', blurb: 'Six tasks, strictly in order' },
+		{ id: 'one35', name: '1-3-5', blurb: 'One big, three medium, five small' }
+	];
+	let style = $state<DailyMethod>('must3');
 
 	function start(kind: 'example' | 'blank') {
 		workspace.start(kind);
+		if (style !== 'must3') workspace.updateSettings({ dailyMethod: style });
 		toast(
 			kind === 'example'
 				? 'Example plan loaded · reset it any time in Settings'
@@ -40,6 +50,30 @@
 		</p>
 	</div>
 
+	<div class="flex flex-col gap-3">
+		<span class="eyebrow">How do you like to plan your day?</span>
+		<div class="grid gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Planning style">
+			{#each STYLES as m (m.id)}
+				<button
+					type="button"
+					role="radio"
+					aria-checked={style === m.id}
+					onclick={() => (style = m.id)}
+					class="flex flex-col gap-1 border p-3.5 text-left transition-[border-color,background-color,transform] duration-200 active:scale-[0.98] {style ===
+					m.id
+						? 'border-ink bg-surface'
+						: 'border-line-2 hover:border-ink-3'}"
+				>
+					<span class="text-[15px] font-bold">{m.name}</span>
+					<span class="text-[12.5px] leading-snug text-ink-3">{m.blurb}</span>
+				</button>
+			{/each}
+		</div>
+		<span class="text-[13px] text-muted"
+			>You can switch any time, and try the Matrix, focus rhythms and weekly review from the menu.</span
+		>
+	</div>
+
 	<div class="grid gap-4 sm:grid-cols-2">
 		<button
 			type="button"
@@ -70,8 +104,8 @@
 			</span>
 			<span class="text-[24px] font-extrabold wide">Blank plan</span>
 			<span class="text-[14.5px] leading-relaxed text-ink-3">
-				Default working week: Monday, Wednesday and Thursday 07:45–16:45, a University Tuesday and a
-				Friday half day. Change any of it in Settings.
+				A plain Monday to Friday, 09:00–17:00 with a half-hour lunch. Change your hours, days off,
+				categories and planning style any time in Settings.
 			</span>
 			<span class="mt-auto inline-flex items-center gap-2 font-bold text-ink"
 				>Start blank <Icon name="arrowRight" size={15} /></span

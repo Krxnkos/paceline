@@ -36,6 +36,14 @@ export const NAV: { group: string; items: NavEntry[] }[] = [
 				index: '03',
 				sub: 'Five days in formation',
 				key: 'w'
+			},
+			{
+				href: '/review',
+				label: 'Weekly review',
+				icon: 'review',
+				index: '14',
+				sub: 'Clear, current, creative',
+				key: 'r'
 			}
 		]
 	},
@@ -73,6 +81,14 @@ export const NAV: { group: string; items: NavEntry[] }[] = [
 				index: '07',
 				sub: 'The month at a glance',
 				key: 'c'
+			},
+			{
+				href: '/matrix',
+				label: 'Matrix',
+				icon: 'matrix',
+				index: '13',
+				sub: 'Urgent against important',
+				key: 'm'
 			}
 		]
 	},
@@ -100,7 +116,7 @@ export const NAV: { group: string; items: NavEntry[] }[] = [
 				label: 'Insights',
 				icon: 'insights',
 				index: '10',
-				sub: 'Twelve weeks, no blind spots',
+				sub: 'How the time went',
 				key: 's'
 			}
 		]

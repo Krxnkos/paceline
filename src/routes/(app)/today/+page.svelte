@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import CaptureBar from '#lib/task/CaptureBar.svelte';
 	import NowCard from '#lib/task/NowCard.svelte';
+	import DailyList from '#lib/task/DailyList.svelte';
 	import PageHead from '#lib/ui/PageHead.svelte';
 	import Button from '#lib/ui/Button.svelte';
 	import Kpi from '#lib/ui/Kpi.svelte';
@@ -14,10 +15,21 @@
 	import { clock } from '#lib/stores/clock.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { agendaFor, type AgendaItem } from '#lib/task/agenda.ts';
-	import { DOW_SHORT, dow, fmtHours, fmtLong, minToHM, patternFor } from '#lib/domain/dates.ts';
+	import {
+		DOW_SHORT,
+		awayLabel,
+		dow,
+		fmtHours,
+		fmtLong,
+		minToHM,
+		patternFor
+	} from '#lib/domain/dates.ts';
 	import { bookedMin, dayCapacity, freeIntervals } from '#lib/domain/plan.ts';
 	import { mustDos, urgency } from '#lib/domain/forecast.ts';
 	import { labelBar } from '#lib/ui/styles.ts';
+	import { pointerDrag } from '#lib/ui/pointerDrag.ts';
+	import { flip } from 'svelte/animate';
+	import { cubicOut } from 'svelte/easing';
 
 	const today = $derived(clock.today);
 	const s = $derived(workspace.settings);
@@ -43,7 +55,7 @@
 			: pattern.kind === 'personal'
 				? `Personal day · ${pattern.start}–${pattern.end}`
 				: pattern.kind === 'uni'
-					? 'University day · no tasks planned'
+					? `${awayLabel(pattern)} · no tasks planned`
 					: s.leave.includes(today)
 						? 'On leave · nothing planned'
 						: 'Day off · nothing planned'
@@ -192,16 +204,75 @@
 		};
 	}
 
-	// ── Drag one block onto another to swap the order ─────────
-	let dragId = $state<string | null>(null);
-	let dropKey = $state<string | null>(null);
+	// ── Drag a block up or down the day ───────────────────────
+	// The block lifts and follows the pointer; a line shows where it will go and the
+	// time it will start. It lands straight after whatever sits above that line.
+	let sort = $state<{
+		key: string;
+		id: string;
+		y0: number;
+		scroll0: number;
+		dy: number;
+		slot: number;
+		start: number;
+	} | null>(null);
+	const scrollTop = () => document.getElementById('main')?.scrollTop ?? 0;
+	const rows: Record<string, HTMLElement> = {};
 	const movable = (a: AgendaItem) =>
 		a.kind === 'block' && !a.history && a.state !== 'past' && a.task?.status !== 'done';
-	// A block lands at the start of the item it's dropped on; meetings and lunch push it after.
-	const target = (a: AgendaItem) =>
-		a.kind === 'meeting' || a.kind === 'lunch' ? a.end : Math.max(a.start, clock.minute);
-	const canDrop = (a: AgendaItem) =>
-		!!dragId && a.task?.id !== dragId && a.state !== 'past' && !a.history;
+	const others = $derived(sort ? agenda.filter((a) => a.key !== sort!.key) : agenda);
+
+	function startFor(slot: number): number {
+		const prev = others[slot - 1];
+		const next = others[slot];
+		let s = prev
+			? prev.kind === 'reserved'
+				? prev.start
+				: prev.end
+			: (next?.start ?? clock.minute);
+		s = Math.max(s, Math.ceil(clock.minute / 5) * 5);
+		return Math.min(s, 24 * 60 - 15);
+	}
+
+	function sortFor(a: AgendaItem) {
+		return {
+			enabled: movable(a),
+			callbacks: {
+				start: (_e: PointerEvent, origin: { x: number; y: number }) => {
+					const i = agenda.findIndex((x) => x.key === a.key);
+					sort = {
+						key: a.key,
+						id: a.task!.id,
+						y0: origin.y,
+						scroll0: scrollTop(),
+						dy: 0,
+						slot: i,
+						start: a.start
+					};
+				},
+				move: (e: PointerEvent) => {
+					if (!sort) return;
+					const list = agenda.filter((x) => x.key !== sort!.key);
+					let slot = list.length;
+					for (let i = 0; i < list.length; i++) {
+						const r = rows[list[i].key]?.getBoundingClientRect();
+						if (r && e.clientY < r.top + r.height / 2) {
+							slot = i;
+							break;
+						}
+					}
+					// Keep the lifted card under the pointer, even while the page scrolls.
+					const dy = e.clientY - sort.y0 + (scrollTop() - sort.scroll0);
+					sort = { ...sort, dy, slot, start: startFor(slot) };
+				},
+				end: (_e: PointerEvent | null, cancelled: boolean) => {
+					const s = sort;
+					sort = null;
+					if (s && !cancelled) workspace.moveTo(s.id, today, s.start);
+				}
+			}
+		};
+	}
 
 	/** When a quick win is fitted in: a time today, else the day. */
 	function quickAt(id: string): string {
@@ -215,6 +286,19 @@
 		toast(`Re-planned · ${n} block${n === 1 ? '' : 's'} today · ${fmtHours(booked)} h booked`);
 	}
 </script>
+
+{#snippet dropLine(start: number)}
+	<div
+		class="pointer-events-none absolute inset-x-0 -top-[5px] z-10 col-span-2 h-0"
+		aria-hidden="true"
+	>
+		<div class="pl-dropline ml-[66px] h-0.5 bg-ink"></div>
+		<span
+			class="absolute -top-2.5 right-0 bg-ink px-1.5 py-0.5 font-mono text-[10px] tracking-[0.06em] text-canvas"
+			>Starts {minToHM(start)}</span
+		>
+	</div>
+{/snippet}
 
 <svelte:head><title>Paceline · Today</title></svelte:head>
 
@@ -272,22 +356,19 @@
 				{#each agenda as a (a.key)}
 					{@const st = blockStyle(a)}
 					{@const labels = workspace.labelsOf(a.task)}
+					{@const lifted = sort?.key === a.key}
 					<div
 						role="listitem"
-						class="grid grid-cols-[54px_minmax(0,1fr)] items-stretch gap-3"
-						ondragover={(e) => {
-							if (!canDrop(a)) return;
-							e.preventDefault();
-							dropKey = a.key;
-						}}
-						ondragleave={() => dropKey === a.key && (dropKey = null)}
-						ondrop={(e) => {
-							if (!canDrop(a)) return;
-							e.preventDefault();
-							workspace.moveTo(dragId!, today, target(a));
-							dragId = dropKey = null;
-						}}
+						bind:this={rows[a.key]}
+						animate:flip={{ duration: 260, easing: cubicOut }}
+						class="pl-row relative grid grid-cols-[54px_minmax(0,1fr)] items-stretch gap-3 {lifted
+							? 'z-20'
+							: ''}"
+						style={lifted ? `transform: translateY(${sort!.dy}px)` : undefined}
 					>
+						{#if sort && !lifted && others.indexOf(a) === sort.slot}
+							{@render dropLine(sort.start)}
+						{/if}
 						<span class="flex flex-col items-start gap-1.5 pt-[9px]">
 							<span class="font-mono text-xs {st.time}">{minToHM(a.start)}</span>
 							{#if movable(a) && !workspace.isLocked(a.task)}
@@ -303,26 +384,20 @@
 						<button
 							type="button"
 							disabled={a.kind === 'lunch' || a.kind === 'reserved'}
-							draggable={movable(a)}
-							ondragstart={(e) => {
-								dragId = a.task!.id;
-								e.dataTransfer?.setData('text/plain', a.task!.id);
-							}}
-							ondragend={() => (dragId = dropKey = null)}
+							use:pointerDrag={sortFor(a)}
 							ondblclick={() =>
 								!a.history && workspace.isLocked(a.task) && workspace.unfix(a.task!.id)}
 							onclick={() => (a.task ? openTask(a.task.id) : null)}
 							title={movable(a)
-								? 'Drag onto another block to swap · double-click to release a moved block'
+								? 'Drag up or down to move · double-click a solid block to release it'
 								: undefined}
 							class="relative flex flex-col justify-between gap-1 overflow-hidden border py-[9px] pr-3 text-left transition-opacity disabled:cursor-default {labels.length
 								? 'pl-4'
 								: 'pl-3'} {st.box} {a.kind === 'block' && a.state === 'past'
 								? 'opacity-50'
-								: ''} {movable(a) ? 'cursor-grab active:cursor-grabbing' : ''} {dragId ===
-							a.task?.id
-								? 'opacity-40'
-								: ''} {dropKey === a.key ? 'outline-2 outline-offset-2 outline-ink' : ''}"
+								: ''} {movable(a) ? 'cursor-grab select-none' : ''} {lifted
+								? 'shadow-2xl scale-[1.015] ring-2 ring-ink'
+								: ''}"
 							style="min-height: {Math.max(40, Math.round((a.end - a.start) * 0.9))}px"
 						>
 							{#if labels.length}
@@ -357,6 +432,11 @@
 							: 'No work blocks today.'}
 					</p>
 				{/each}
+				{#if sort && sort.slot >= others.length}
+					<div class="grid grid-cols-[54px_minmax(0,1fr)] gap-3">
+						{@render dropLine(sort.start)}
+					</div>
+				{/if}
 				{#if agenda.some(movable)}
 					<p class="m-0 pt-1 font-mono text-[10px] tracking-[0.08em] text-faint uppercase">
 						Confirm makes a block solid · drag one onto another to swap · double-click a solid block
@@ -371,79 +451,88 @@
 				{lead}
 				next={nextItem}
 				{gap}
-				calm={pattern.kind === 'uni' ? 'University day' : pattern.kind === 'off' ? 'Day off' : null}
+				calm={pattern.kind === 'uni'
+					? awayLabel(pattern)
+					: pattern.kind === 'off'
+						? 'Day off'
+						: null}
 			/>
 
-			<Panel
-				title="Must-dos 1–3"
-				meta={musts.length ? (mustLeft ? `${mustLeft} left` : 'All done') : ''}
-			>
-				{#each musts as t, i (t.id)}
-					{@const locked = i >= 3 && !firstThreeDone}
-					{@const done = t.status === 'done'}
-					{@const u = urgency(t, today)}
-					{@const blocked = !done && workspace.waitsOn(t).length > 0}
-					<div
-						class="grid min-h-[54px] w-full grid-cols-[30px_minmax(0,1fr)_auto_24px] items-center gap-3 border-b border-line px-[18px] py-3 {locked
-							? 'bg-panel'
-							: ''}"
-					>
-						<span
-							class="text-lg heavy {locked
-								? 'text-line-3'
-								: done
+			{#if (s.dailyMethod ?? 'must3') === 'must3'}
+				<Panel
+					title="Must-dos 1–3"
+					meta={musts.length ? (mustLeft ? `${mustLeft} left` : 'All done') : ''}
+				>
+					{#each musts as t, i (t.id)}
+						{@const locked = i >= 3 && !firstThreeDone}
+						{@const done = t.status === 'done'}
+						{@const u = urgency(t, today)}
+						{@const blocked = !done && workspace.waitsOn(t).length > 0}
+						<div
+							animate:flip={{ duration: 240, easing: cubicOut }}
+							class="grid min-h-[54px] w-full grid-cols-[30px_minmax(0,1fr)_auto_24px] items-center gap-3 border-b border-line px-[18px] py-3 {locked
+								? 'bg-panel'
+								: ''}"
+						>
+							<span
+								class="text-lg heavy {locked
+									? 'text-line-3'
+									: done
+										? 'text-faint'
+										: i === musts.findIndex((x) => x.status !== 'done')
+											? 'text-accent-text'
+											: 'text-ink-3'}">{String(i + 1).padStart(2, '0')}</span
+							>
+							<button
+								type="button"
+								disabled={locked}
+								onclick={() => openTask(t.id)}
+								class="truncate text-left text-sm font-semibold disabled:cursor-not-allowed {locked
 									? 'text-faint'
-									: i === musts.findIndex((x) => x.status !== 'done')
-										? 'text-accent-text'
-										: 'text-ink-3'}">{String(i + 1).padStart(2, '0')}</span
+									: done
+										? 'text-faint line-through'
+										: blocked
+											? 'text-flare hover:underline'
+											: 'text-ink hover:underline'}"
+								>{locked ? 'Locked until 1–3 are done' : t.title}</button
+							>
+							{#if locked}
+								<Badge fill tone="mute" label="If time" />
+							{:else}
+								<Badge
+									fill
+									tone={done ? 'lead' : blocked ? 'late' : u.tone}
+									label={done ? 'Done' : blocked ? 'Blocked' : u.label}
+								/>
+							{/if}
+							{#if locked}
+								<span class="text-faint"><Icon name="lock" size={16} /></span>
+							{:else}
+								<Checkbox
+									checked={done}
+									label="Complete {t.title}"
+									onchange={() => workspace.complete(t.id)}
+								/>
+							{/if}
+						</div>
+					{:else}
+						<p class="m-0 px-[18px] py-6 text-sm text-muted">
+							No must-dos. Capture something worth doing.
+						</p>
+					{/each}
+					{#if musts.length > 3}
+						<div
+							class="px-[18px] py-2.5 font-mono text-[10px] tracking-[0.1em] uppercase {firstThreeDone
+								? 'text-accent-text'
+								: 'text-faint'}"
 						>
-						<button
-							type="button"
-							disabled={locked}
-							onclick={() => openTask(t.id)}
-							class="truncate text-left text-sm font-semibold disabled:cursor-not-allowed {locked
-								? 'text-faint'
-								: done
-									? 'text-faint line-through'
-									: blocked
-										? 'text-flare hover:underline'
-										: 'text-ink hover:underline'}"
-							>{locked ? 'Locked until 1–3 are done' : t.title}</button
-						>
-						{#if locked}
-							<Badge fill tone="mute" label="If time" />
-						{:else}
-							<Badge
-								fill
-								tone={done ? 'lead' : blocked ? 'late' : u.tone}
-								label={done ? 'Done' : blocked ? 'Blocked' : u.label}
-							/>
-						{/if}
-						{#if locked}
-							<span class="text-faint"><Icon name="lock" size={16} /></span>
-						{:else}
-							<Checkbox
-								checked={done}
-								label="Complete {t.title}"
-								onchange={() => workspace.complete(t.id)}
-							/>
-						{/if}
-					</div>
-				{:else}
-					<p class="m-0 px-[18px] py-6 text-sm text-muted">
-						No must-dos. Capture something worth doing.
-					</p>
-				{/each}
-				{#if musts.length > 3}
-					<div
-						class="px-[18px] py-2.5 font-mono text-[10px] tracking-[0.1em] uppercase {firstThreeDone
-							? 'text-accent-text'
-							: 'text-faint'}"
-					>
-						{firstThreeDone ? 'Must-dos cleared · 4–5 unlocked' : '4–5 unlock once 1–3 are done'}
-					</div>
-				{/if}
-			</Panel>
+							{firstThreeDone ? 'Must-dos cleared · 4–5 unlocked' : '4–5 unlock once 1–3 are done'}
+						</div>
+					{/if}
+				</Panel>
+			{:else}
+				<DailyList method={s.dailyMethod as 'ivy' | 'one35' | 'frog'} />
+			{/if}
 
 			<Panel
 				title={s.fillQuickWins === false ? 'Quick wins' : 'Quick wins · fill free time'}
@@ -452,6 +541,7 @@
 				{#each quick as q (q.id)}
 					{@const done = q.status === 'done'}
 					<div
+						animate:flip={{ duration: 240, easing: cubicOut }}
 						class="grid min-h-12 grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 border-b border-line px-[18px] py-[11px]"
 					>
 						<Checkbox

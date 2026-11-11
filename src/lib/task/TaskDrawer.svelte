@@ -14,11 +14,18 @@
 	import { focus } from '../stores/focus.svelte.ts';
 	import { ui } from '../stores/ui.svelte.ts';
 	import { clock } from '../stores/clock.svelte.ts';
-	import { blockers, code, forecast, urgency } from '../domain/forecast.ts';
+	import { blockers, code, forecast, quadrantOf, urgency } from '../domain/forecast.ts';
 	import { splitDep } from '../domain/plan.ts';
 	import { fmtDur, fmtShort, minToHM } from '../domain/dates.ts';
 	import { input, label, toneText } from '../ui/styles.ts';
-	import type { Task } from '../types.ts';
+	import type { Quadrant, Task } from '../types.ts';
+
+	const QUAD_LABEL: Record<Quadrant, string> = {
+		do: 'Do first',
+		schedule: 'Schedule',
+		delegate: 'Delegate',
+		drop: 'Eliminate'
+	};
 
 	const param = $derived(page.url.searchParams.get('task'));
 	const task = $derived.by(() => {
@@ -61,6 +68,14 @@
 	let newSub = $state('');
 	let logMin = $state(15);
 	let depPick = $state('');
+	// "Move to": exact day and time, for when dragging isn't handy.
+	let moveDate = $state('');
+	let moveTime = $state('');
+	$effect(() => {
+		const b = placement?.blocks[0];
+		moveDate = b?.date ?? clock.today;
+		moveTime = b ? minToHM(b.start) : '09:00';
+	});
 
 	const depOptions = $derived(
 		task
@@ -167,6 +182,36 @@
 						>Confirm {placement.blocks.length === 1 ? 'this time' : 'these times'}</Button
 					>
 				{/if}
+				{#if task.status !== 'done' && !task.inbox && task.start !== 'manual'}
+					<form
+						class="flex flex-wrap items-end gap-2"
+						onsubmit={(e) => {
+							e.preventDefault();
+							const [h, m] = moveTime.split(':').map(Number);
+							if (moveDate && Number.isFinite(h))
+								workspace.moveTo(task.id, moveDate, h * 60 + (m || 0));
+						}}
+					>
+						<label
+							class="flex flex-col gap-1 font-mono text-[10px] tracking-[0.1em] text-muted uppercase"
+							>Move to
+							<input
+								type="date"
+								min={clock.today}
+								bind:value={moveDate}
+								class="{input} h-9 w-[150px] font-mono text-[13px]"
+							/></label
+						>
+						<input
+							type="time"
+							step="300"
+							bind:value={moveTime}
+							aria-label="Start time"
+							class="{input} h-9 w-[110px] font-mono text-[13px]"
+						/>
+						<Button size="sm" type="submit">Move</Button>
+					</form>
+				{/if}
 				{#if task.status !== 'done'}
 					<Toggle
 						label="Quick win"
@@ -177,8 +222,57 @@
 						onchange={(v) =>
 							workspace.updateTask(task.id, v ? { quick: true } : { quick: false, inbox: false })}
 					/>
+					{#if workspace.settings.dailyMethod === 'frog'}
+						<Toggle
+							label="Today’s frog"
+							hint="planned first thing, before everything else"
+							checked={!!task.frog}
+							onchange={(v) => workspace.setFrog(v ? task.id : null)}
+						/>
+					{/if}
 				{/if}
 			</section>
+
+			{#if task.status !== 'done'}
+				<section class="flex flex-col gap-2.5">
+					<span class={label}>Park it</span>
+					<Toggle
+						label="Someday / maybe"
+						hint={task.someday ? 'not planned until you bring it back' : 'keep it, but not now'}
+						checked={!!task.someday}
+						onchange={(v) => workspace.setSomeday(task.id, v)}
+					/>
+					<label class="flex items-center gap-2 text-[14px] text-ink-2">
+						<span class="w-[118px] flex-none">Waiting for</span>
+						<input
+							value={task.waiting ?? ''}
+							maxlength="60"
+							placeholder="Who or what (e.g. Sam’s reply)"
+							class="{input} h-9 text-[13.5px]"
+							onchange={(e) => workspace.setWaiting(task.id, e.currentTarget.value)}
+						/>
+					</label>
+					<label class="flex items-center gap-2 text-[14px] text-ink-2">
+						<span class="w-[118px] flex-none">Matrix square</span>
+						<Select
+							value={task.quadrant ?? ''}
+							aria-label="Eisenhower quadrant"
+							options={[
+								{
+									value: '',
+									label: `Automatic (${QUAD_LABEL[quadrantOf(task, clock.today, workspace.settings.urgentDays ?? 2)]})`
+								},
+								{ value: 'do', label: 'Do first' },
+								{ value: 'schedule', label: 'Schedule' },
+								{ value: 'delegate', label: 'Delegate · park it' },
+								{ value: 'drop', label: 'Eliminate · park it' }
+							]}
+							onchange={(e) =>
+								workspace.setQuadrant(task.id, (e.currentTarget.value || null) as Quadrant | null)}
+						/>
+					</label>
+				</section>
+			{/if}
 
 			<TaskFields task={draft} onchange={(patch) => workspace.updateTask(task.id, patch)} />
 

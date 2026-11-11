@@ -18,7 +18,26 @@ export interface Label {
 	name: string;
 	color: LabelColor;
 }
-export type Category = 'Deep Work' | 'Study' | 'Admin' | 'Comms' | 'Review';
+/** A category name, e.g. "Deep Work". The list is the person's own (Settings ▸ Categories). */
+export type Category = string;
+
+export type CategoryColor = 'ink' | 'faint' | 'accent' | 'ice' | 'lilac' | 'amber' | 'flare';
+
+export interface CategoryDef {
+	name: string;
+	color: CategoryColor;
+	/** When the planner should try to put this kind of work first. */
+	when: 'any' | 'morning' | 'afternoon';
+}
+
+/** How the day's short list on Today is chosen. */
+export type DailyMethod = 'must3' | 'ivy' | 'one35' | 'frog';
+
+/** Built-in focus timer rhythms. */
+export type FocusPreset = 'pomodoro' | '52-17' | '90-20' | 'flowtime' | 'fit' | 'custom';
+
+/** Eisenhower Matrix quadrant, when set by hand. */
+export type Quadrant = 'do' | 'schedule' | 'delegate' | 'drop';
 export type StartMode = 'auto' | 'asap' | 'date' | 'manual';
 export type Repeat = '' | 'daily' | 'weekly' | 'fortnightly' | 'monthly';
 export type Tone = 'late' | 'warn' | 'info' | 'lead' | 'plain' | 'mute';
@@ -66,6 +85,14 @@ export interface Task {
 	labels?: string[];
 	/** Dragged to a fixed start on the calendar; the planner keeps it there. */
 	fixed?: { date: ISODate; start: number } | null;
+	/** Eat the Frog: the one task to do first thing. */
+	frog?: boolean;
+	/** Eisenhower quadrant chosen by hand (otherwise worked out from priority and due date). */
+	quadrant?: Quadrant | null;
+	/** GTD: parked for later, not planned. */
+	someday?: boolean;
+	/** GTD: waiting on someone else (who or what), not planned. */
+	waiting?: string | null;
 	/** Planned blocks the person confirmed: kept exactly where they are. */
 	confirmed?: { date: ISODate; start: number; end: number }[] | null;
 }
@@ -124,7 +151,8 @@ export interface Goal {
 
 export type DayPattern =
 	| { kind: 'work'; start: HM; end: HM; lunch?: [HM, HM] }
-	| { kind: 'uni' }
+	/** A day away from planned work: training, university, client site… (label is free text). */
+	| { kind: 'uni'; label?: string }
 	| { kind: 'personal'; start: HM; end: HM }
 	| { kind: 'off' };
 
@@ -156,6 +184,14 @@ export interface Settings {
 	reserved?: Reserved[];
 	/** Put quick wins into leftover gaps and unused reserved time (on unless turned off). */
 	fillQuickWins?: boolean;
+	/** The person's own categories; the defaults are used until they change them. */
+	categories?: CategoryDef[];
+	dailyMethod?: DailyMethod;
+	focusPreset?: FocusPreset;
+	/** Eisenhower: "urgent" means due within this many days. */
+	urgentDays?: number;
+	/** Last GTD-style weekly review. */
+	lastReview?: ISODate | null;
 }
 
 export interface Block {
@@ -194,6 +230,8 @@ export interface Workspace {
 	active?: ActiveBlock | null;
 	/** A block that ended with its task unfinished, waiting on "Did you complete this?". */
 	awaiting?: ActiveBlock | null;
+	/** Ivy Lee: today's six, in the order they'll be worked. */
+	daily?: { date: ISODate; ids: string[] } | null;
 }
 
 export interface Badge {
@@ -219,7 +257,16 @@ export const STATUSES: { id: Status; label: string }[] = [
 	{ id: 'done', label: 'Done' }
 ];
 
-export const CATEGORIES: Category[] = ['Deep Work', 'Study', 'Admin', 'Comms', 'Review'];
+export const DEFAULT_CATEGORIES: CategoryDef[] = [
+	{ name: 'Deep Work', color: 'ink', when: 'morning' },
+	{ name: 'Study', color: 'lilac', when: 'any' },
+	{ name: 'Admin', color: 'faint', when: 'afternoon' },
+	{ name: 'Comms', color: 'amber', when: 'afternoon' },
+	{ name: 'Review', color: 'ice', when: 'any' }
+];
+
+/** Names only, for code that runs before a workspace is loaded. */
+export const CATEGORIES: Category[] = DEFAULT_CATEGORIES.map((c) => c.name);
 
 export const REPEATS: { id: Repeat; label: string }[] = [
 	{ id: '', label: 'Does not repeat' },

@@ -28,6 +28,8 @@ export interface Parsed {
 export interface ParseContext {
 	today: ISODate;
 	projects: Pick<Project, 'id' | 'name'>[];
+	/** The person's categories (defaults when left out). */
+	categories?: Category[];
 }
 
 const CATS: [string, Category][] = [
@@ -140,7 +142,19 @@ export function parseCapture(text: string, ctx: ParseContext): Parsed {
 				out.personal = true;
 				continue;
 			}
-			const hit = CATS.find(([k]) => k.startsWith(key) || key.startsWith(k));
+			const cats: [string, Category][] = ctx.categories
+				? ctx.categories.map((c) => [c.toLowerCase().replace(/[^a-z0-9]/g, ''), c])
+				: CATS;
+			// Exact first, then the start of a name ("#deep" → Deep Work), then any word in it.
+			const hit =
+				cats.find(([k]) => k === key) ??
+				cats.find(([k]) => k.startsWith(key) || key.startsWith(k)) ??
+				cats.find(([, name]) =>
+					name
+						.toLowerCase()
+						.split(/\s+/)
+						.some((w) => w.startsWith(key))
+				);
 			if (hit) {
 				out.cat = hit[1];
 				continue;
@@ -227,7 +241,7 @@ export function parseCapture(text: string, ctx: ParseContext): Parsed {
 
 export const SYNTAX_REFERENCE: { token: string; meaning: string }[] = [
 	{ token: '!1 … !5', meaning: 'Priority' },
-	{ token: '#deep #study #admin #comms #review', meaning: 'Category' },
+	{ token: '#deep #admin …', meaning: 'Category (the start of its name is enough)' },
 	{ token: '#personal', meaning: 'Personal task (Pro)' },
 	{ token: '+Project_Name', meaning: 'Project, new if unknown' },
 	{ token: '@fri @16oct @+3 @eow @eom', meaning: 'Due date' },

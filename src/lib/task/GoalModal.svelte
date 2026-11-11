@@ -10,13 +10,13 @@
 	import { toast } from '../stores/toast.svelte.ts';
 	import { addDays } from '../domain/dates.ts';
 	import { input } from '../ui/styles.ts';
-	import { CATEGORIES, type Category, type Goal } from '../types.ts';
+	import type { Category, Goal } from '../types.ts';
 
 	let title = $state('');
 	let why = $state('');
 	let source = $state<Goal['source']>('manual');
 	let projectId = $state('');
-	let category = $state<Category>('Deep Work');
+	let category = $state<Category>(workspace.defaultCategory());
 	let current = $state(0);
 	let target = $state(10);
 	let unit = $state('');
@@ -31,7 +31,7 @@
 		why = g?.why ?? '';
 		source = g?.source ?? 'manual';
 		projectId = g?.projectId ?? workspace.projects[0]?.id ?? '';
-		category = g?.category ?? 'Deep Work';
+		category = g?.category ?? workspace.defaultCategory();
 		current = g?.current ?? 0;
 		target = g?.target ?? 10;
 		unit = g?.unit ?? '';
@@ -104,7 +104,7 @@
 					<Field label="Category">
 						<Select
 							bind:value={category}
-							options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+							options={workspace.catNames.map((c) => ({ value: c, label: c }))}
 						/>
 					</Field>
 				{/if}

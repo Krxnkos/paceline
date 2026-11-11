@@ -9,6 +9,7 @@
 	import { ui } from '#lib/stores/ui.svelte.ts';
 	import { toast } from '#lib/stores/toast.svelte.ts';
 	import { agendaFor } from '#lib/task/agenda.ts';
+	import { pointerDrag } from '#lib/ui/pointerDrag.ts';
 	import {
 		addDays,
 		addMonths,
@@ -20,11 +21,12 @@
 		monthStart,
 		parseISO,
 		patternFor,
+		awayLabel,
 		weekStart
 	} from '#lib/domain/dates.ts';
 	import { bookedMin, dayCapacity } from '#lib/domain/plan.ts';
 	import { code, urgency } from '#lib/domain/forecast.ts';
-	import { catSwatch } from '#lib/ui/styles.ts';
+	import { catSwatch } from '#lib/ui/categories.ts';
 	import type { ISODate } from '#lib/types.ts';
 
 	let month = $state(monthStart(clock.today));
@@ -52,10 +54,38 @@
 		return [...meetings, ...due];
 	}
 
-	function drop(e: DragEvent, d: ISODate) {
-		e.preventDefault();
-		dropOn = null;
-		const id = e.dataTransfer?.getData('text/plain');
+	// Drag a chip to another day to change its due date (mouse, pen or finger).
+	const cellEls: Record<string, HTMLElement> = {};
+	let chip = $state<{ id: string; title: string; x: number; y: number } | null>(null);
+	function dayAt(x: number, y: number): ISODate | null {
+		for (const [d, el] of Object.entries(cellEls)) {
+			const r = el?.getBoundingClientRect();
+			if (r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return d;
+		}
+		return null;
+	}
+	function chipDrag(t: { id: string; title: string }) {
+		return {
+			enabled: true,
+			callbacks: {
+				start: (e: PointerEvent) => {
+					chip = { id: t.id, title: t.title, x: e.clientX, y: e.clientY };
+				},
+				move: (e: PointerEvent) => {
+					chip = { id: t.id, title: t.title, x: e.clientX, y: e.clientY };
+					dropOn = dayAt(e.clientX, e.clientY);
+				},
+				end: (_e: PointerEvent | null, cancelled: boolean) => {
+					const d = dropOn;
+					chip = null;
+					dropOn = null;
+					if (!cancelled && d) drop(t.id, d);
+				}
+			}
+		};
+	}
+
+	function drop(id: string, d: ISODate) {
 		const t = workspace.task(id);
 		if (!t || t.due === d) return;
 		workspace.updateTask(t.id, { due: d });
@@ -123,14 +153,9 @@
 					<div
 						role="gridcell"
 						tabindex="-1"
-						ondragover={(e) => {
-							e.preventDefault();
-							dropOn = d;
-						}}
-						ondragleave={() => dropOn === d && (dropOn = null)}
-						ondrop={(e) => drop(e, d)}
+						bind:this={cellEls[d]}
 						onclick={() => (selected = d)}
-						class="relative flex min-h-[120px] cursor-pointer flex-col gap-1 border-r border-b border-line p-2 {inMonth
+						class="relative flex min-h-[120px] cursor-pointer flex-col gap-1 border-r border-b border-line p-2 transition-colors duration-150 {inMonth
 							? ''
 							: 'opacity-40'} {p.kind === 'uni' || p.kind === 'off' ? 'hatch' : ''} {dropOn === d
 							? 'bg-accent/10'
@@ -149,7 +174,7 @@
 									class="font-mono text-[9.5px] tracking-[0.1em] text-lilac">PERSONAL</span
 								>{/if}
 							{#if p.kind === 'uni'}<span class="font-mono text-[9.5px] tracking-[0.1em] text-lilac"
-									>UNI</span
+									>{awayLabel(p).slice(0, 10).toUpperCase()}</span
 								>{/if}
 							{#if s.leave.includes(d)}<span
 									class="font-mono text-[9.5px] tracking-[0.1em] text-muted">LEAVE</span
@@ -167,8 +192,7 @@
 								{@const u = urgency(it.t, clock.today)}
 								<button
 									type="button"
-									draggable="true"
-									ondragstart={(e) => e.dataTransfer?.setData('text/plain', it.t.id)}
+									use:pointerDrag={chipDrag(it.t)}
 									onclick={(e) => (e.stopPropagation(), openTask(it.t.id))}
 									class="flex items-center gap-1.5 truncate border border-line-2 bg-raised px-1.5 py-0.5 text-left text-[11.5px] {it
 										.t.status === 'done'
@@ -177,7 +201,7 @@
 											? 'text-flare'
 											: 'text-ink-2'} {workspace.waitsOn(it.t).length ? 'border-flare' : ''}"
 								>
-									<span class="size-1.5 flex-none {catSwatch[it.t.category]}"></span><span
+									<span class="size-1.5 flex-none {catSwatch(it.t.category)}"></span><span
 										class="truncate">{it.label}</span
 									>
 								</button>
@@ -266,3 +290,15 @@
 		</aside>
 	</div>
 </div>
+
+{#if chip}
+	<div
+		class="shadow-2xl pointer-events-none fixed z-[95] max-w-[240px] -translate-x-1/2 -translate-y-1/2 border-2 border-ink bg-raised px-2.5 py-1.5 text-[12.5px] font-semibold"
+		style="left: {chip.x}px; top: {chip.y}px"
+	>
+		<span class="block truncate">{chip.title}</span>
+		<span class="font-mono text-[10px] font-normal text-muted uppercase"
+			>{dropOn ? `Due ${fmtShort(dropOn)}` : 'Drop on a day'}</span
+		>
+	</div>
+{/if}

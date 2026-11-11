@@ -1,5 +1,9 @@
 <script lang="ts">
 	import PageHead from '#lib/ui/PageHead.svelte';
+	import { flip } from 'svelte/animate';
+	import { fade } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	import { pointerDrag } from '#lib/ui/pointerDrag.ts';
 	import Badge from '#lib/ui/Badge.svelte';
 	import Icon from '#lib/ui/Icon.svelte';
 	import { workspace, openTask } from '#lib/stores/workspace.svelte.ts';
@@ -9,7 +13,7 @@
 	import { blockers, code, urgency } from '#lib/domain/forecast.ts';
 	import { score } from '#lib/domain/plan.ts';
 	import { fmtDur } from '#lib/domain/dates.ts';
-	import { catBorder } from '#lib/ui/styles.ts';
+	import { catBorder } from '#lib/ui/categories.ts';
 	import BoardSetup from '#lib/task/BoardSetup.svelte';
 	import { labelCls } from '#lib/ui/styles.ts';
 	import type { Status, Task } from '#lib/types.ts';
@@ -80,14 +84,44 @@
 			});
 	}
 
-	function drop(e: DragEvent, status: Status) {
-		e.preventDefault();
-		over = null;
-		const id = e.dataTransfer?.getData('text/plain') || dragId;
-		const t = workspace.task(id);
-		if (t) setStatus(t, status);
-		dragId = null;
+	// Cards follow the pointer (mouse, pen or finger); the column under it lights up.
+	const laneEls: Record<string, HTMLElement> = {};
+	let ghost = $state<{ title: string; x: number; y: number } | null>(null);
+
+	function laneAt(x: number, y: number): Status | null {
+		for (const [id, el] of Object.entries(laneEls)) {
+			const r = el?.getBoundingClientRect();
+			if (r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return id as Status;
+		}
+		return null;
 	}
+
+	function cardDrag(t: { id: string; title: string }) {
+		return {
+			enabled: true,
+			scroll: () => [boardScroller],
+			callbacks: {
+				start: (e: PointerEvent) => {
+					dragId = t.id;
+					ghost = { title: t.title, x: e.clientX, y: e.clientY };
+				},
+				move: (e: PointerEvent) => {
+					ghost = { title: t.title, x: e.clientX, y: e.clientY };
+					over = laneAt(e.clientX, e.clientY);
+				},
+				end: (_e: PointerEvent | null, cancelled: boolean) => {
+					const id = dragId;
+					const to = over;
+					dragId = null;
+					over = null;
+					ghost = null;
+					const task = workspace.task(id);
+					if (!cancelled && task && to && task.status !== to) setStatus(task, to);
+				}
+			}
+		};
+	}
+	let boardScroller: HTMLElement | undefined = $state();
 
 	const filters = $derived([
 		{ id: 'all', label: 'All' },
@@ -137,7 +171,7 @@
 	</PageHead>
 	<BoardSetup bind:open={setup} />
 
-	<div class="overflow-x-auto">
+	<div class="overflow-x-auto" bind:this={boardScroller}>
 		<div
 			class="grid items-start gap-3"
 			style="grid-template-columns: repeat({lanes.length}, minmax(208px, 1fr))"
@@ -145,16 +179,11 @@
 			{#each lanes as lane (lane.id)}
 				<section
 					aria-label={lane.label}
-					ondragover={(e) => {
-						e.preventDefault();
-						over = lane.id;
-					}}
-					ondragleave={() => over === lane.id && (over = null)}
-					ondrop={(e) => drop(e, lane.id)}
-					class="flex min-h-[640px] flex-col gap-2.5 border border-line p-2.5 transition-colors {over ===
+					bind:this={laneEls[lane.id]}
+					class="flex min-h-[640px] flex-col gap-2.5 border p-2.5 transition-[background-color,border-color] duration-200 {over ===
 					lane.id
-						? 'bg-accent/10'
-						: 'bg-panel'}"
+						? 'border-accent-text bg-accent/10'
+						: 'border-line bg-panel'}"
 				>
 					<div
 						class="flex flex-col gap-1 border-b-2 px-1 pt-1.5 pb-2.5 {lane.overWip
@@ -194,16 +223,13 @@
 						{@const lead = t.id === leadId}
 						{@const tp = workspace.project(t.projectId)}
 						<article
-							draggable="true"
-							ondragstart={(e) => {
-								dragId = t.id;
-								e.dataTransfer?.setData('text/plain', t.id);
-							}}
-							ondragend={() => ((dragId = null), (over = null))}
-							class="flex cursor-grab flex-col gap-2.5 border-t-[3px] p-3 active:cursor-grabbing {waits.length &&
+							use:pointerDrag={cardDrag(t)}
+							animate:flip={{ duration: 260, easing: cubicOut }}
+							in:fade={{ duration: 180 }}
+							class="pl-lift flex cursor-grab flex-col gap-2.5 border-t-[3px] p-3 select-none {waits.length &&
 							!done
 								? 'border border-flare border-t-flare bg-flare/8'
-								: `bg-surface ${catBorder[t.category]}`} {lead
+								: `bg-surface ${catBorder(t.category)}`} {lead
 								? 'outline-2 -outline-offset-2 outline-accent'
 								: ''} {dragId === t.id ? 'opacity-40' : ''}"
 						>
@@ -300,3 +326,17 @@
 		</div>
 	</div>
 </div>
+
+{#if ghost}
+	<div
+		class="shadow-2xl pointer-events-none fixed z-[95] w-[220px] -translate-x-1/2 -translate-y-1/2 rotate-[1.5deg] border-2 border-ink bg-raised px-3 py-2.5 text-[13.5px] font-bold"
+		style="left: {ghost.x}px; top: {ghost.y}px"
+	>
+		<span class="line-clamp-2">{ghost.title}</span>
+		<span class="font-mono text-[10px] font-normal text-muted uppercase"
+			>{over
+				? `→ ${workspace.columns.find((c) => c.id === over)?.label}`
+				: 'Drop on a column'}</span
+		>
+	</div>
+{/if}

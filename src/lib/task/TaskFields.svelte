@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The editable property grid shared by the drawer and the new-task modal.
 	import type { Task } from '../types.ts';
-	import { CATEGORIES, REPEATS, START_MODES } from '../types.ts';
+	import { REPEATS, START_MODES } from '../types.ts';
 	import LabelPicker from './LabelPicker.svelte';
 	import { workspace } from '../stores/workspace.svelte.ts';
 	import Select from '../ui/Select.svelte';
@@ -51,8 +51,8 @@
 
 	<span class={label}>Category</span>
 	<Select
-		value={task.category ?? 'Deep Work'}
-		options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+		value={task.category ?? workspace.defaultCategory()}
+		options={workspace.catNames.map((c) => ({ value: c, label: c }))}
 		onchange={(e) => set('category', e.currentTarget.value as Task['category'])}
 		aria-label="Category"
 	/>

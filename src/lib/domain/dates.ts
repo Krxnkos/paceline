@@ -162,6 +162,11 @@ export function patternFor(settings: Settings, s: ISODate): DayPattern {
 	return settings.pattern[dow(s)];
 }
 
+/** What to call a day that isn't a plain work day: the Away label, Personal, Leave… */
+export function awayLabel(p: DayPattern): string {
+	return p.kind === 'uni' ? p.label?.trim() || 'Away' : '';
+}
+
 export function isWorkday(settings: Settings, s: ISODate): boolean {
 	return patternFor(settings, s).kind === 'work';
 }

@@ -19,7 +19,36 @@ export function uid(): string {
 	);
 }
 
+/** A plain working week for new accounts: Monday to Friday, 09:00–17:00. */
 export function defaultSettings(): Settings {
+	const work = {
+		kind: 'work' as const,
+		start: '09:00',
+		end: '17:00',
+		lunch: ['12:30', '13:00'] as [string, string]
+	};
+	return {
+		theme: 'system',
+		pattern: {
+			0: { kind: 'off' },
+			1: work,
+			2: work,
+			3: work,
+			4: work,
+			5: work,
+			6: { kind: 'off' }
+		},
+		bufferPct: 20,
+		wipLimit: 3,
+		focusMin: 25,
+		breakMin: 5,
+		leave: [],
+		reserved: []
+	};
+}
+
+/** The example plan's week: early starts, an away day on Tuesday and a Friday half day. */
+export function exampleSettings(): Settings {
 	const work = {
 		kind: 'work' as const,
 		start: '07:45',
@@ -31,7 +60,7 @@ export function defaultSettings(): Settings {
 		pattern: {
 			0: { kind: 'off' },
 			1: work,
-			2: { kind: 'uni' },
+			2: { kind: 'uni', label: 'University' },
 			3: work,
 			4: work,
 			5: { kind: 'work', start: '07:45', end: '12:30' },
@@ -88,7 +117,7 @@ export function newTask(code: number, today: ISODate, patch: Partial<Task> = {})
 
 /** The example plan from the design boards, laid out around today. */
 export function exampleWorkspace(today: ISODate): Workspace {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 	const ws = weekStart(today);
 	const d = (n: number) => addDays(today, n);
 

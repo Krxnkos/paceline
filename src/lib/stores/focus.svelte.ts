@@ -1,6 +1,24 @@
 import { workspace } from './workspace.svelte.ts';
 import { clock } from './clock.svelte.ts';
 import { toast } from './toast.svelte.ts';
+import type { FocusPreset, Settings } from '../types.ts';
+
+/** Focus rhythms people actually use. Break lengths in minutes. */
+export const FOCUS_PRESETS: Record<FocusPreset, { label: string; hint: string }> = {
+	pomodoro: { label: 'Pomodoro', hint: '25 min focus, 5 min break, 15 min every fourth' },
+	'52-17': { label: '52 / 17', hint: '52 min focus, 17 min break' },
+	'90-20': { label: '90 / 20', hint: 'One 90 min deep-work cycle, 20 min break' },
+	flowtime: { label: 'Flowtime', hint: 'Count up, stop when focus fades; break is a fifth of it' },
+	fit: { label: 'Fit the block', hint: 'Runs for the rest of the current block' },
+	custom: { label: 'Custom', hint: 'Your own focus and break lengths' }
+};
+
+/** The rhythm in use, working out older settings that predate presets. */
+export function presetOf(s: Settings | undefined): FocusPreset {
+	if (s?.focusPreset) return s.focusPreset;
+	if (s?.focusMode === 'fit') return 'fit';
+	return (s?.focusMin ?? 25) === 25 && (s?.breakMin ?? 5) === 5 ? 'pomodoro' : 'custom';
+}
 
 export interface FocusState {
 	taskId: string | null;
@@ -11,6 +29,10 @@ export interface FocusState {
 	remaining: number; // seconds, kept fresh while paused
 	minimised: boolean;
 	loggedSec: number; // focus seconds already logged in this block
+	/** Flowtime: counts up instead of down. */
+	up?: boolean;
+	/** Focus blocks finished in a row, for the Pomodoro long break. */
+	cycles?: number;
 }
 
 const KEY = 'pl-focus';
@@ -22,8 +44,17 @@ class Focus {
 	#timer: ReturnType<typeof setInterval> | null = null;
 
 	running = $derived(!!this.state && !this.state.paused);
-	clock = $derived(fmtClock(this.remaining));
-	progress = $derived(this.state ? 1 - this.remaining / this.state.total : 0);
+	/** Seconds of focus so far in this block. */
+	elapsed = $derived(this.state ? this.state.total - this.remaining : 0);
+	counting = $derived(!!this.state?.up && this.state.phase === 'focus');
+	clock = $derived(fmtClock(this.counting ? this.elapsed : this.remaining));
+	progress = $derived(
+		!this.state
+			? 0
+			: this.counting
+				? Math.min(1, this.elapsed / (50 * 60))
+				: 1 - this.remaining / this.state.total
+	);
 
 	init() {
 		try {
@@ -66,16 +97,47 @@ class Focus {
 		this.#timer = null;
 	}
 
-	/** Minutes for the next focus block: the set length, or what's left of the lit block. */
+	/** Minutes for the next focus block under the chosen rhythm (0 means count up). */
 	plannedMin(): number {
 		const s = workspace.settings;
 		const a = workspace.active;
-		if (s?.focusMode === 'fit' && a) return Math.max(1, a.end - clock.minute);
-		return s?.focusMin ?? 25;
+		switch (presetOf(s)) {
+			case 'pomodoro':
+				return 25;
+			case '52-17':
+				return 52;
+			case '90-20':
+				return 90;
+			case 'flowtime':
+				return 0;
+			case 'fit':
+				return a ? Math.max(1, a.end - clock.minute) : (s?.focusMin ?? 25);
+			default:
+				return s?.focusMin ?? 25;
+		}
+	}
+
+	/** Break after a focus block of `focusSec` seconds. */
+	#breakMin(focusSec: number, cycles: number): number {
+		const s = workspace.settings;
+		switch (presetOf(s)) {
+			case 'pomodoro':
+				return cycles > 0 && cycles % 4 === 0 ? 15 : 5;
+			case '52-17':
+				return 17;
+			case '90-20':
+				return 20;
+			case 'flowtime':
+				return Math.min(30, Math.max(5, Math.round(focusSec / 60 / 5)));
+			default:
+				return s?.breakMin ?? 5;
+		}
 	}
 
 	start(taskId: string | null, minutes = this.plannedMin()) {
-		const total = Math.max(1, minutes) * 60;
+		const up = minutes <= 0;
+		// Flowtime counts up; it stops by itself after four hours.
+		const total = up ? 4 * 3600 : Math.max(1, minutes) * 60;
 		this.state = {
 			taskId,
 			phase: 'focus',
@@ -84,7 +146,9 @@ class Focus {
 			paused: false,
 			remaining: total,
 			minimised: false,
-			loggedSec: 0
+			loggedSec: 0,
+			up,
+			cycles: this.state?.cycles ?? 0
 		};
 		this.remaining = total;
 		this.#save();
@@ -123,6 +187,11 @@ class Focus {
 		else s.endsAt += 300_000;
 		this.#sync();
 		this.#save();
+	}
+
+	/** Flowtime: focus is fading, so log it and take a break in proportion. */
+	breakNow() {
+		if (this.state?.phase === 'focus') this.#finish();
 	}
 
 	reset() {
@@ -169,9 +238,11 @@ class Focus {
 		const s = this.state;
 		if (!s) return;
 		if (s.phase === 'focus') {
+			const focusSec = s.total - this.remaining;
 			const mins = Math.round(this.#unlogged() / 60);
 			if (s.taskId && mins > 0) workspace.logTime(s.taskId, mins);
-			const brk = (workspace.settings?.breakMin ?? 5) * 60;
+			const cycles = (s.cycles ?? 0) + 1;
+			const brk = this.#breakMin(focusSec, cycles) * 60;
 			this.state = {
 				...s,
 				phase: 'break',
@@ -179,7 +250,9 @@ class Focus {
 				endsAt: Date.now() + brk * 1000,
 				paused: false,
 				remaining: brk,
-				loggedSec: 0
+				loggedSec: 0,
+				up: false,
+				cycles
 			};
 			this.remaining = brk;
 			toast(`Focus block done · ${mins} min logged · take a break`);

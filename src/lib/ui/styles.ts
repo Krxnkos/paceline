@@ -1,4 +1,4 @@
-import type { Category, LabelColor, Tone } from '../types.ts';
+import type { LabelColor, Tone } from '../types.ts';
 
 /** Shared class strings so every field looks the same. */
 export const input =
@@ -26,22 +26,6 @@ export const toneBg: Record<Tone, string> = {
 	lead: 'bg-accent',
 	plain: 'bg-ink-3',
 	mute: 'bg-muted'
-};
-
-export const catSwatch: Record<Category, string> = {
-	'Deep Work': 'bg-ink',
-	Study: 'bg-lilac',
-	Admin: 'bg-faint',
-	Comms: 'bg-amber',
-	Review: 'bg-ice'
-};
-
-export const catBorder: Record<Category, string> = {
-	'Deep Work': 'border-ink',
-	Study: 'border-lilac',
-	Admin: 'border-faint',
-	Comms: 'border-amber',
-	Review: 'border-ice'
 };
 
 export const labelCls: Record<LabelColor, string> = {

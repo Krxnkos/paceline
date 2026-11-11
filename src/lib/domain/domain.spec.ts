@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, fmtDur, weekStart } from './dates.ts';
 import { parseCapture, parseDateWord, parseEstimate } from './parse.ts';
+import { awayLabel } from './dates.ts';
 import { buildPlan, dayCapacity, isPersonalDay, remainingMin, reservedSlots } from './plan.ts';
-import { blockers, forecast, mustDos, urgency } from './forecast.ts';
-import { defaultSettings, exampleWorkspace, newTask } from './seed.ts';
+import {
+	blockers,
+	forecast,
+	frogOf,
+	ivyList,
+	mustDos,
+	oneThreeFive,
+	quadrantOf,
+	urgency
+} from './forecast.ts';
+import { defaultSettings, exampleSettings, exampleWorkspace, newTask } from './seed.ts';
 import { dailyFocus, projectStats } from './stats.ts';
 
 // Wednesday 28 October 2026, 10:19
@@ -78,7 +88,7 @@ describe('parse', () => {
 });
 
 describe('plan', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 
 	it('keeps the buffer free', () => {
 		// Wednesday: 07:45–16:45 less 30 min lunch = 510 min; 20% buffer → 408.
@@ -139,7 +149,7 @@ describe('forecast', () => {
 
 	it('flags late forecasts', () => {
 		const t = newTask(1, TODAY, { estimateMin: 1200, due: addDays(TODAY, 1) });
-		const plan = buildPlan([t], [], defaultSettings(), NOW);
+		const plan = buildPlan([t], [], exampleSettings(), NOW);
 		expect(forecast(t, plan)?.tone).toBe('late');
 	});
 });
@@ -164,7 +174,7 @@ describe('example workspace', () => {
 });
 
 describe('blocks that happened', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 
 	it('keeps a lit block fixed and counts it towards the task', () => {
 		const t = newTask(1, TODAY, { id: 'a', estimateMin: 90 });
@@ -192,12 +202,12 @@ describe('blocks that happened', () => {
 
 describe('personal tasks', () => {
 	const settings = {
-		...defaultSettings(),
+		...exampleSettings(),
 		pattern: {
-			...defaultSettings().pattern,
+			...exampleSettings().pattern,
 			4: { kind: 'personal', start: '10:00', end: '16:00' }
 		}
-	} as ReturnType<typeof defaultSettings>;
+	} as ReturnType<typeof exampleSettings>;
 
 	it('runs personal tasks only on Personal and non-working days', () => {
 		const t = newTask(1, TODAY, { id: 'p', scope: 'personal', estimateMin: 900 });
@@ -221,7 +231,7 @@ describe('personal tasks', () => {
 
 describe('reserved time', () => {
 	const settings = {
-		...defaultSettings(),
+		...exampleSettings(),
 		reserved: [
 			{
 				id: 'r1',
@@ -261,7 +271,7 @@ describe('reserved time', () => {
 });
 
 describe('dragged blocks', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 
 	it('stay where they were dropped and push other work aside', () => {
 		const a = newTask(1, TODAY, { estimateMin: 60, priority: 1, title: 'A' });
@@ -286,7 +296,7 @@ describe('dragged blocks', () => {
 });
 
 describe('sub-task dependencies', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 	const parent = newTask(1, TODAY, {
 		title: 'Parent',
 		subtasks: [
@@ -324,7 +334,7 @@ describe('daily focus', () => {
 });
 
 describe('quick wins', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 	const TOMORROW = '2026-10-29';
 
 	it('fill the first gap they fit, whole', () => {
@@ -373,7 +383,7 @@ describe('quick wins', () => {
 });
 
 describe('confirmed blocks', () => {
-	const settings = defaultSettings();
+	const settings = exampleSettings();
 
 	it('stay exactly where they were confirmed, and the rest is still planned', () => {
 		const t = newTask(1, TODAY, {
@@ -414,5 +424,109 @@ describe('confirmed blocks', () => {
 		expect(buildPlan([t], [], settings, NOW).placed[t.id]!.blocks).toEqual([
 			{ taskId: t.id, date: TODAY, start: 840, end: 870 }
 		]);
+	});
+});
+
+describe('planning methods', () => {
+	const settings = exampleSettings();
+
+	it('Eat the frog / Ivy Lee: tasks placed first get the earliest time, in order', () => {
+		const a = newTask(1, TODAY, { estimateMin: 60, priority: 1, title: 'Big' });
+		const frog = newTask(2, TODAY, { estimateMin: 60, priority: 5, title: 'Frog', frog: true });
+		const plan = buildPlan([a, frog], [], settings, NOW, null, [frog.id]);
+		expect(plan.placed[frog.id]!.blocks[0].start).toBe(615);
+		expect(plan.placed[a.id]!.blocks[0].start).toBe(675);
+	});
+
+	it('the frog goes first even if its category prefers afternoons', () => {
+		const frog = newTask(1, TODAY, { estimateMin: 30, category: 'Admin', frog: true });
+		const plan = buildPlan([frog], [], settings, NOW, null, [frog.id]);
+		expect(plan.placed[frog.id]!.blocks[0].start).toBe(615);
+	});
+
+	it('parked tasks (someday, waiting, delegated, dropped) are not planned', () => {
+		const ts = [
+			newTask(1, TODAY, { someday: true }),
+			newTask(2, TODAY, { waiting: 'Sam' }),
+			newTask(3, TODAY, { quadrant: 'delegate' }),
+			newTask(4, TODAY, { quadrant: 'drop' }),
+			newTask(5, TODAY, { quick: true, someday: true })
+		];
+		expect(buildPlan(ts, [], settings, NOW).blocks).toHaveLength(0);
+	});
+
+	it('Eisenhower: sorts by priority and due date, and the hand-set square wins', () => {
+		expect(quadrantOf(newTask(1, TODAY, { priority: 1, due: TODAY }), TODAY)).toBe('do');
+		expect(quadrantOf(newTask(2, TODAY, { priority: 2, due: '2026-11-20' }), TODAY)).toBe(
+			'schedule'
+		);
+		expect(quadrantOf(newTask(3, TODAY, { priority: 4, due: '2026-10-29' }), TODAY)).toBe(
+			'delegate'
+		);
+		expect(quadrantOf(newTask(4, TODAY, { priority: 5 }), TODAY)).toBe('drop');
+		expect(quadrantOf(newTask(5, TODAY, { priority: 5, quadrant: 'do' }), TODAY)).toBe('do');
+	});
+
+	it('"Do first" outranks a higher-priority task in the plan', () => {
+		const p1 = newTask(1, TODAY, { estimateMin: 60, priority: 2 });
+		const doIt = newTask(2, TODAY, { estimateMin: 60, priority: 3, quadrant: 'do' });
+		const plan = buildPlan([p1, doIt], [], settings, NOW);
+		expect(plan.placed[doIt.id]!.blocks[0].start).toBeLessThan(plan.placed[p1.id]!.blocks[0].start);
+	});
+
+	it('1-3-5 sizes tasks by estimate and caps each group', () => {
+		const ts = [
+			newTask(1, TODAY, { estimateMin: 120 }),
+			newTask(2, TODAY, { estimateMin: 180 }),
+			...[1, 2, 3, 4].map((i) => newTask(10 + i, TODAY, { estimateMin: 45 })),
+			...[1, 2, 3, 4, 5, 6].map((i) => newTask(20 + i, TODAY, { estimateMin: 10, quick: true }))
+		];
+		const plan = buildPlan(ts, [], settings, NOW);
+		const g = oneThreeFive(ts, plan, TODAY);
+		expect([g.big.length, g.medium.length, g.small.length]).toEqual([1, 3, 5]);
+	});
+
+	it('Ivy Lee keeps the order you set, then fills to six', () => {
+		const ts = [1, 2, 3, 4, 5, 6, 7].map((i) => newTask(i, TODAY, { priority: 3 }));
+		const plan = buildPlan(ts, [], settings, NOW);
+		const list = ivyList(ts, plan, TODAY, { date: TODAY, ids: [ts[6].id, ts[5].id] });
+		expect(list).toHaveLength(6);
+		expect(list.slice(0, 2).map((t) => t.code)).toEqual([7, 6]);
+	});
+
+	it('the marked frog wins over the suggestion', () => {
+		const ts = [
+			newTask(1, TODAY, { priority: 1, estimateMin: 120 }),
+			newTask(2, TODAY, { frog: true })
+		];
+		expect(frogOf(ts, buildPlan(ts, [], settings, NOW), TODAY)?.code).toBe(2);
+	});
+});
+
+describe('your own categories and days', () => {
+	it('captures with the person’s categories (start of a name, or any word in it)', () => {
+		const cats = ['Writing', 'Client calls', 'Errands'];
+		const base = { today: TODAY, projects: [], categories: cats };
+		expect(parseCapture('Draft chapter #wri', base).cat).toBe('Writing');
+		expect(parseCapture('Ring Jo #calls', base).cat).toBe('Client calls');
+		expect(parseCapture('Post office #err', base).cat).toBe('Errands');
+	});
+
+	it('honours a category’s afternoon preference', () => {
+		const s = {
+			...exampleSettings(),
+			categories: [{ name: 'Errands', color: 'amber' as const, when: 'afternoon' as const }]
+		};
+		const t = newTask(1, TODAY, { category: 'Errands', estimateMin: 30 });
+		expect(buildPlan([t], [], s, NOW).placed[t.id]!.blocks[0].start).toBeGreaterThanOrEqual(
+			12 * 60
+		);
+	});
+
+	it('names away days by their label, and defaults to a plain Mon–Fri week', () => {
+		expect(awayLabel({ kind: 'uni', label: 'Training' })).toBe('Training');
+		expect(awayLabel({ kind: 'uni' })).toBe('Away');
+		const d = defaultSettings();
+		expect([1, 2, 3, 4, 5].every((n) => d.pattern[n as 1].kind === 'work')).toBe(true);
 	});
 });
