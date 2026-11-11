@@ -33,7 +33,7 @@
 	aria-valuenow={Math.round(pct * 100)}
 >
 	<div
-		class="absolute inset-y-0 left-0 {fill[tone]} transition-[width] duration-300"
+		class="absolute inset-y-0 left-0 {fill[tone]} transition-[width] duration-500 ease-out"
 		style="width: {pct * 100}%"
 	></div>
 </div>

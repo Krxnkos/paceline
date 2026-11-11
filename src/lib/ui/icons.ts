@@ -53,7 +53,11 @@ export const ICONS = {
 		'<rect x="2" y="6" width="20" height="12"/><path d="M6 10h0M10 10h0M14 10h0M18 10h0M7 14h10"/>',
 	sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>',
 	flag: '<path d="M5 21V4h11l-2 4 2 4H5"/>',
-	minimise: '<path d="M4 14h6v6M20 10h-6V4"/>'
+	minimise: '<path d="M4 14h6v6M20 10h-6V4"/>',
+	chevronUp: '<path d="M6 15l6-6 6 6"/>',
+	matrix: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
+	review: '<path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
+	moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>'
 } as const;
 
 export type IconName = keyof typeof ICONS;

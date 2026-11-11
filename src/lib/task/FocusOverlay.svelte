@@ -39,8 +39,9 @@
 		<div class="mx-auto flex h-full max-w-[960px] flex-col justify-between gap-8 px-6 py-8">
 			<div class="flex items-center justify-between">
 				<span class="eyebrow">
-					{isBreak ? 'Break' : (task?.category ?? 'Focus')} · {Math.round(focus.state.total / 60)}m
-					block
+					{isBreak ? 'Break' : (task?.category ?? 'Focus')} · {focus.counting
+						? 'Flowtime · counting up'
+						: `${Math.round(focus.state.total / 60)}m block`}
 				</span>
 				<button
 					type="button"
@@ -98,7 +99,11 @@
 					icon={paused ? 'play' : 'pause'}
 					onclick={() => focus.toggle()}>{paused ? 'Resume' : 'Pause'}</Button
 				>
-				<Button size="lg" onclick={() => focus.addFive()}>+5 min</Button>
+				{#if focus.counting}
+					<Button size="lg" onclick={() => focus.breakNow()}>Take a break</Button>
+				{:else}
+					<Button size="lg" onclick={() => focus.addFive()}>+5 min</Button>
+				{/if}
 				{#if task && !isBreak}
 					<Button size="lg" icon="check" onclick={() => focus.completeTask()}>Complete task</Button>
 				{/if}

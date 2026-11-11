@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, onNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import AppShell from '#lib/shell/AppShell.svelte';
 	import UsernameGate from '#lib/auth/UsernameGate.svelte';
@@ -13,6 +13,28 @@
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	// Smooth page changes where the browser supports view transitions. Opening a task
+	// (?task=…) stays on the same page, so it isn't animated as a page change.
+	onNavigate((nav) => {
+		if (!document.startViewTransition || nav.from?.url.pathname === nav.to?.url.pathname) return;
+		if (document.visibilityState !== 'visible') return;
+		if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		return new Promise((resolve) => {
+			try {
+				const vt = document.startViewTransition(async () => {
+					resolve();
+					await nav.complete.catch(() => {});
+				});
+				// A transition cut short (tab hidden, quick second click) is harmless.
+				vt.ready.catch(() => resolve());
+				vt.updateCallbackDone.catch(() => {});
+				vt.finished.catch(() => {});
+			} catch {
+				resolve();
+			}
+		});
+	});
 
 	// Route guard: signed-out visitors go to /login; a first sign-in lands on /onboarding.
 	$effect(() => {

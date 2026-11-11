@@ -17,8 +17,17 @@
 	import { clock } from '#lib/stores/clock.svelte.ts';
 	import { DOW_LONG, fmtShort, dayWorkMinutes, fmtHours } from '#lib/domain/dates.ts';
 	import { input } from '#lib/ui/styles.ts';
-	import { CATEGORIES } from '#lib/types.ts';
-	import type { Category, DayPattern, Reserved, Weekday } from '#lib/types.ts';
+	import type {
+		Category,
+		DailyMethod,
+		DayPattern,
+		FocusPreset,
+		Reserved,
+		Weekday
+	} from '#lib/types.ts';
+	import { flip } from 'svelte/animate';
+	import { CAT_BG, CAT_COLORS } from '#lib/ui/categories.ts';
+	import { FOCUS_PRESETS, presetOf } from '#lib/stores/focus.svelte.ts';
 	import { uid } from '#lib/domain/seed.ts';
 
 	const s = $derived(workspace.settings);
@@ -34,12 +43,37 @@
 	function setKind(d: Weekday, kind: DayPattern['kind']) {
 		if (kind === 'work')
 			setPattern(d, { kind: 'work', start: '09:00', end: '17:00', lunch: ['12:00', '12:30'] });
-		else if (kind === 'uni') setPattern(d, { kind: 'uni' });
+		else if (kind === 'uni') setPattern(d, { kind: 'uni', label: 'Away' });
 		else if (kind === 'personal') setPattern(d, { kind: 'personal', start: '09:00', end: '18:00' });
 		else setPattern(d, { kind: 'off' });
 	}
 
 	const reserved = $derived(s.reserved ?? []);
+	let newCat = $state('');
+	const METHODS: { id: DailyMethod; name: string; blurb: string }[] = [
+		{
+			id: 'must3',
+			name: 'Must-dos 1–3',
+			blurb: 'Three things that make the day a win. Two more unlock once they’re done.'
+		},
+		{
+			id: 'ivy',
+			name: 'Ivy Lee',
+			blurb:
+				'Six tasks in strict order. Finish one before starting the next; the order is planned first.'
+		},
+		{
+			id: 'one35',
+			name: '1-3-5',
+			blurb: 'One big thing, three medium and five small, sized by estimate. A realistic day.'
+		},
+		{
+			id: 'frog',
+			name: 'Eat the frog',
+			blurb:
+				'Your hardest, most important task goes first thing in the morning, before anything else.'
+		}
+	];
 	function setReserved(id: string, patch: Partial<Reserved>) {
 		workspace.updateSettings({
 			reserved: reserved.map((r) => (r.id === id ? { ...r, ...patch } : r))
@@ -100,7 +134,7 @@
 						class="w-40"
 						options={[
 							{ value: 'work', label: 'Work day' },
-							{ value: 'uni', label: 'University' },
+							{ value: 'uni', label: 'Away · no tasks' },
 							{
 								value: 'personal',
 								label: workspace.tier.personal ? 'Personal' : 'Personal · Pro',
@@ -178,10 +212,166 @@
 						>
 						<span class="text-[13px] text-muted">Personal tasks only</span>
 					{:else if p.kind === 'uni'}
-						<span class="text-[13px] text-muted">No tasks are planned on University days</span>
+						<label class="flex items-center gap-2 font-mono text-[11px] text-muted"
+							>CALLED
+							<input
+								value={p.label ?? ''}
+								maxlength="24"
+								placeholder="Away"
+								class="{input} w-40 text-[13px]"
+								onchange={(e) =>
+									setPattern(d, { kind: 'uni', label: e.currentTarget.value.trim() })}
+							/></label
+						>
+						<span class="text-[13px] text-muted"
+							>e.g. University, Training, Client site · nothing is planned</span
+						>
 					{/if}
 				</div>
 			{/each}
+		</div>
+	</Panel>
+
+	<Panel title="Planning method">
+		<div class="flex flex-col gap-5 p-[18px]">
+			<div class="flex flex-col gap-2">
+				<span class="eyebrow">Today’s short list</span>
+				<div class="grid gap-2 sm:grid-cols-2">
+					{#each METHODS as m (m.id)}
+						{@const on = (s.dailyMethod ?? 'must3') === m.id}
+						<button
+							type="button"
+							aria-pressed={on}
+							onclick={() => workspace.updateSettings({ dailyMethod: m.id })}
+							class="flex flex-col gap-1 border p-3.5 text-left transition-[border-color,background-color,transform] duration-200 active:scale-[0.99] {on
+								? 'border-ink bg-surface'
+								: 'border-line-2 hover:border-ink-3'}"
+						>
+							<span class="flex items-center justify-between gap-2">
+								<span class="text-[15px] font-bold">{m.name}</span>
+								{#if on}<span
+										class="font-mono text-[10px] tracking-[0.1em] text-accent-text uppercase"
+										>In use</span
+									>{/if}
+							</span>
+							<span class="text-[13px] leading-snug text-ink-3">{m.blurb}</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<Field label="Focus rhythm" hint={FOCUS_PRESETS[presetOf(s)].hint}>
+					<Select
+						value={presetOf(s)}
+						options={Object.entries(FOCUS_PRESETS).map(([value, p]) => ({ value, label: p.label }))}
+						onchange={(e) => {
+							const v = e.currentTarget.value as FocusPreset;
+							workspace.updateSettings({
+								focusPreset: v,
+								focusMode: v === 'fit' ? 'fit' : 'fixed'
+							});
+						}}
+					/>
+				</Field>
+				<Field label="Matrix: urgent means due within" hint="Used by the Eisenhower Matrix.">
+					<Select
+						value={s.urgentDays ?? 2}
+						options={[0, 1, 2, 3, 5, 7].map((n) => ({
+							value: n,
+							label: n === 0 ? 'Today' : `${n} day${n === 1 ? '' : 's'}`
+						}))}
+						onchange={(e) =>
+							workspace.updateSettings({ urgentDays: Number(e.currentTarget.value) })}
+					/>
+				</Field>
+			</div>
+			<p class="m-0 text-[13px] text-muted">
+				Also built in: time blocking (the planner), quick wins and batching (reserved time), day
+				theming (reserved time ▸ Whole day), the <a href="/matrix" class="underline"
+					>Eisenhower Matrix</a
+				>, GTD’s Someday/Maybe and Waiting for (in each task), and a guided
+				<a href="/review" class="underline">weekly review</a>.
+			</p>
+		</div>
+	</Panel>
+
+	<Panel title="Categories" meta="{workspace.categories.length} in use">
+		<div class="flex flex-col">
+			<p class="m-0 border-b border-line px-[18px] py-3 text-[13.5px] text-ink-3">
+				The kinds of work you do. Each gets a colour, and you can tell the planner to put it in the
+				morning or afternoon. Type <span class="font-mono text-ink-2">#</span> and the start of a name
+				when capturing.
+			</p>
+			{#each workspace.categories as c (c.name)}
+				{@const used = workspace.tasks.filter((t) => t.category === c.name).length}
+				<div
+					class="flex flex-wrap items-center gap-3 border-b border-line px-[18px] py-3"
+					animate:flip={{ duration: 220 }}
+				>
+					<input
+						value={c.name}
+						maxlength="32"
+						aria-label="Category name"
+						class="{input} w-44"
+						onchange={(e) => workspace.updateCategory(c.name, { name: e.currentTarget.value })}
+					/>
+					<div class="flex gap-1" role="group" aria-label="Colour">
+						{#each CAT_COLORS as col (col)}
+							<button
+								type="button"
+								aria-label={col}
+								aria-pressed={c.color === col}
+								class="grid size-8 place-items-center border transition-transform hover:scale-110 {c.color ===
+								col
+									? 'border-ink'
+									: 'border-transparent'}"
+								onclick={() => workspace.updateCategory(c.name, { color: col })}
+								><span class="size-4 {CAT_BG[col]}"></span></button
+							>
+						{/each}
+					</div>
+					<Select
+						value={c.when}
+						class="w-40"
+						aria-label="Best time of day"
+						options={[
+							{ value: 'any', label: 'Any time' },
+							{ value: 'morning', label: 'Mornings first' },
+							{ value: 'afternoon', label: 'Afternoons first' }
+						]}
+						onchange={(e) =>
+							workspace.updateCategory(c.name, {
+								when: e.currentTarget.value as 'any' | 'morning' | 'afternoon'
+							})}
+					/>
+					<span class="font-mono text-[11px] text-muted">{used} task{used === 1 ? '' : 's'}</span>
+					<button
+						type="button"
+						class="ml-auto grid size-10 place-items-center text-muted hover:text-flare disabled:opacity-30"
+						aria-label="Remove {c.name}"
+						disabled={workspace.categories.length <= 1}
+						onclick={() =>
+							workspace.deleteCategory(
+								c.name,
+								workspace.catNames.find((n) => n !== c.name) ?? c.name
+							)}><Icon name="trash" size={16} /></button
+					>
+				</div>
+			{/each}
+			<form
+				class="flex flex-wrap gap-2 px-[18px] py-3.5"
+				onsubmit={(e) => {
+					e.preventDefault();
+					workspace.addCategory(
+						newCat,
+						CAT_COLORS[workspace.categories.length % CAT_COLORS.length]
+					);
+					newCat = '';
+				}}
+			>
+				<input bind:value={newCat} placeholder="New category, e.g. Writing" class="{input} w-60" />
+				<Button size="md" icon="plus" type="submit">Add category</Button>
+			</form>
 		</div>
 	</Panel>
 
@@ -210,7 +400,7 @@
 						workspace.updateSettings({ wipLimit: num(e.currentTarget.value, 1, 10) })}
 				/>
 			</Field>
-			<Field label="Focus block · minutes">
+			<Field label="Custom focus · minutes" hint="Used when the rhythm is Custom.">
 				<input
 					type="number"
 					min="5"
@@ -222,18 +412,8 @@
 						workspace.updateSettings({ focusMin: num(e.currentTarget.value, 5, 120) })}
 				/>
 			</Field>
-			<Field label="Focus timer" hint="Fit the block runs for the rest of the current block.">
-				<Select
-					value={s.focusMode ?? 'fixed'}
-					options={[
-						{ value: 'fixed', label: 'Set length' },
-						{ value: 'fit', label: 'Fit the block' }
-					]}
-					onchange={(e) =>
-						workspace.updateSettings({ focusMode: e.currentTarget.value as 'fixed' | 'fit' })}
-				/>
-			</Field>
-			<Field label="Break · minutes">
+
+			<Field label="Custom break · minutes" hint="Used by Custom and Fit the block.">
 				<input
 					type="number"
 					min="1"
@@ -302,7 +482,7 @@
 						<Select
 							value={r.category}
 							class="w-36"
-							options={CATEGORIES.map((c) => ({ value: c, label: c }))}
+							options={workspace.catNames.map((c) => ({ value: c, label: c }))}
 							onchange={(e) => setReserved(r.id, { category: e.currentTarget.value as Category })}
 						/></label
 					>
@@ -334,18 +514,38 @@
 							{/if}
 						</span></label
 					>
-					<label class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted"
-						>MINUTES
-						<input
-							type="number"
-							min="5"
-							max="240"
-							step="5"
-							value={r.minutes}
-							class="{input} w-24 font-mono"
-							onchange={(e) => setReserved(r.id, { minutes: num(e.currentTarget.value, 5, 240) })}
-						/></label
-					>
+					<div class="flex flex-col gap-1.5 font-mono text-[10.5px] tracking-[0.1em] text-muted">
+						<span>HOW LONG</span>
+						<span class="flex items-center gap-2">
+							{#if r.minutes < 24 * 60}
+								<input
+									type="number"
+									min="5"
+									max="480"
+									step="5"
+									value={r.minutes}
+									aria-label="Minutes"
+									class="{input} w-24 font-mono"
+									onchange={(e) =>
+										setReserved(r.id, { minutes: num(e.currentTarget.value, 5, 480) })}
+								/>
+							{/if}
+							<button
+								type="button"
+								aria-pressed={r.minutes >= 24 * 60}
+								title="Day theming: the whole working day goes to this category"
+								class="h-10 border px-3 font-mono text-[11px] uppercase transition-colors {r.minutes >=
+								24 * 60
+									? 'border-ink bg-ink text-canvas'
+									: 'border-line-2 text-muted hover:border-ink-3'}"
+								onclick={() =>
+									setReserved(r.id, {
+										minutes: r.minutes >= 24 * 60 ? 60 : 24 * 60,
+										start: 'start'
+									})}>Whole day</button
+							>
+						</span>
+					</div>
 					<div class="flex flex-col gap-1.5">
 						<span class="font-mono text-[10.5px] tracking-[0.1em] text-muted">DAYS</span>
 						<div class="flex gap-1" role="group" aria-label="Days">
@@ -386,8 +586,8 @@
 								...reserved,
 								{
 									id: uid(),
-									label: 'Admin',
-									category: 'Admin',
+									label: workspace.defaultCategory(true),
+									category: workspace.defaultCategory(true),
 									start: 'start',
 									minutes: 20,
 									days: [1, 2, 3, 4, 5]

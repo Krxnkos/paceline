@@ -19,7 +19,8 @@ import { api, auth } from './auth.svelte.ts';
 import { connection } from './connection.svelte.ts';
 import { tierInfo } from '../tiers.ts';
 import type { Column, Label, Placement } from '../types.ts';
-import { STATUSES } from '../types.ts';
+import { DEFAULT_CATEGORIES, STATUSES } from '../types.ts';
+import type { CategoryDef } from '../types.ts';
 
 /** Offline cache only; MongoDB is the source of truth. */
 const CACHE = (userId: string) => `pl-ws-cache:${userId}`;
@@ -54,13 +55,23 @@ class WorkspaceStore {
 	goals = $derived(this.data?.goals ?? []);
 	settings = $derived(this.data?.settings as Settings);
 	// A task waiting on "Did you complete this?" is paused until it's answered.
+	/** Tasks the planning method puts first today (Eat the Frog, Ivy Lee). */
+	first = $derived.by((): string[] => {
+		const m = this.data?.settings.dailyMethod;
+		if (m === 'frog')
+			return this.tasks.filter((t) => t.frog && t.status !== 'done').map((t) => t.id);
+		const daily = this.data?.daily;
+		if (m === 'ivy' && daily?.date === clock.today) return daily.ids;
+		return [];
+	});
 	plan = $derived(
 		buildPlan(
 			this.tasks.filter((t) => t.id !== this.data?.awaiting?.taskId),
 			this.meetings,
 			this.data?.settings ?? blankWorkspace().settings,
 			clock.now,
-			this.data?.active ?? null
+			this.data?.active ?? null,
+			this.first
 		)
 	);
 	alerts = $derived(
@@ -69,6 +80,10 @@ class WorkspaceStore {
 	tier = $derived(tierInfo(auth.user?.tier));
 	columns = $derived(this.data?.columns?.length ? this.data.columns : STATUSES);
 	labels = $derived(this.data?.labels ?? []);
+	categories = $derived<CategoryDef[]>(
+		this.data?.settings.categories?.length ? this.data.settings.categories : DEFAULT_CATEGORIES
+	);
+	catNames = $derived(this.categories.map((c) => c.name));
 	active = $derived(this.data?.active ?? null);
 	awaiting = $derived(this.data?.awaiting ?? null);
 	inboxCount = $derived(this.tasks.filter((t) => t.inbox && t.status !== 'done').length);
@@ -335,7 +350,11 @@ class WorkspaceStore {
 	// ── Capture ───────────────────────────────────────────────
 
 	parse(text: string): Parsed {
-		return parseCapture(text, { today: clock.today, projects: this.projects });
+		return parseCapture(text, {
+			today: clock.today,
+			projects: this.projects,
+			categories: this.catNames
+		});
 	}
 
 	/** Smart capture: creates a task or meeting from one line. */
@@ -375,7 +394,7 @@ class WorkspaceStore {
 				projectId,
 				priority: p.imp ?? opts.defaults?.priority ?? 3,
 				scope: p.personal && this.tier.personal ? 'personal' : opts.defaults?.scope,
-				category: p.cat ?? opts.defaults?.category ?? (p.quick ? 'Admin' : 'Deep Work'),
+				category: p.cat ?? opts.defaults?.category ?? this.defaultCategory(p.quick),
 				due: p.due ?? opts.defaults?.due ?? null,
 				estimateMin: p.est ?? (p.quick ? 10 : 30),
 				start: p.start ?? 'auto',
@@ -630,6 +649,128 @@ class WorkspaceStore {
 		toast('Label deleted', { action: 'Undo', onAction: () => this.undo() });
 	}
 
+	// ── Planning methods ──────────────────────────────────────
+
+	/** Eat the Frog: mark one task as today's frog (or clear it). */
+	setFrog(id: string | null) {
+		this.#change((ws) => {
+			for (const t of ws.tasks) t.frog = t.id === id ? true : undefined;
+		});
+		const t = id ? this.task(id) : null;
+		toast(t ? `${code(t.code)} is today’s frog · planned first thing` : 'Frog cleared');
+	}
+
+	/** Ivy Lee: save today's six in this order. */
+	setDaily(ids: string[]) {
+		this.#change((ws) => {
+			ws.daily = { date: clock.today, ids: ids.slice(0, 6) };
+		});
+	}
+
+	/** Eisenhower Matrix: put a task in a quadrant. Delegate parks it as waiting; drop parks it as someday. */
+	setQuadrant(id: string, q: import('../types.ts').Quadrant | null) {
+		const t = this.task(id);
+		if (!t) return;
+		this.#change((ws) => {
+			const x = ws.tasks.find((y) => y.id === id)!;
+			x.quadrant = q;
+			if (q === 'do' && x.priority > 2) x.priority = 2;
+			if (q === 'schedule' && x.priority > 2) x.priority = 2;
+		});
+		const words = {
+			do: 'Do first · planned ahead of everything else',
+			schedule: 'Schedule · planned as normal',
+			delegate: 'Delegate · parked until it comes back to you',
+			drop: 'Eliminate · parked, not planned'
+		} as const;
+		toast(q ? words[q] : 'Back to automatic sorting', {
+			action: 'Undo',
+			onAction: () => this.undo()
+		});
+	}
+
+	/** GTD: park a task for later, or bring it back. */
+	setSomeday(id: string, on: boolean) {
+		this.updateTask(id, { someday: on, ...(on ? {} : { quadrant: null }) });
+		toast(on ? 'Moved to Someday/Maybe · not planned' : 'Back in the plan');
+	}
+
+	/** GTD: waiting on someone else (who or what), or clear it. */
+	setWaiting(id: string, who: string | null) {
+		const w = who?.trim() || null;
+		this.updateTask(id, { waiting: w, ...(w ? {} : { quadrant: null }) });
+		toast(w ? `Waiting for ${w} · not planned` : 'No longer waiting · back in the plan');
+	}
+
+	/** GTD weekly review finished. */
+	finishReview() {
+		this.updateSettings({ lastReview: clock.today });
+		toast('Weekly review done · see you next week');
+	}
+
+	// ── Categories (everyone) ─────────────────────────────────
+
+	/** The category new tasks get: the first in the list (or one named like Admin for quick wins). */
+	defaultCategory(quick = false): string {
+		const names = this.catNames;
+		if (quick) return names.find((n) => /admin|errand|chore|misc/i.test(n)) ?? names[0];
+		return names[0] ?? 'General';
+	}
+
+	#categories(ws: Workspace): CategoryDef[] {
+		if (!ws.settings.categories?.length)
+			ws.settings.categories = DEFAULT_CATEGORIES.map((c) => ({ ...c }));
+		return ws.settings.categories;
+	}
+
+	addCategory(name: string, color: CategoryDef['color'] = 'ice') {
+		const n = name.trim().slice(0, 32);
+		if (!n || this.catNames.some((c) => c.toLowerCase() === n.toLowerCase())) {
+			toast(n ? 'That category already exists.' : 'Give the category a name.', { tone: 'err' });
+			return;
+		}
+		this.#change((ws) => {
+			ws.settings.categories = [...this.#categories(ws), { name: n, color, when: 'any' }];
+		});
+	}
+
+	/** Change a category. Renaming carries every task, goal and reserved slot with it. */
+	updateCategory(name: string, patch: Partial<CategoryDef>) {
+		const to = patch.name?.trim().slice(0, 32);
+		if (to !== undefined) {
+			if (!to) return;
+			if (to !== name && this.catNames.some((c) => c.toLowerCase() === to.toLowerCase())) {
+				toast('That category already exists.', { tone: 'err' });
+				return;
+			}
+		}
+		this.#change((ws) => {
+			ws.settings.categories = this.#categories(ws).map((c) =>
+				c.name === name ? { ...c, ...patch, ...(to ? { name: to } : {}) } : c
+			);
+			if (to && to !== name) {
+				for (const t of ws.tasks) if (t.category === name) t.category = to;
+				for (const g of ws.goals) if (g.category === name) g.category = to;
+				for (const r of ws.settings.reserved ?? []) if (r.category === name) r.category = to;
+			}
+		});
+	}
+
+	/** Remove a category; its tasks move to another one. */
+	deleteCategory(name: string, moveTo: string) {
+		if (this.catNames.length <= 1 || name === moveTo) return;
+		this.#change((ws) => {
+			ws.settings.categories = this.#categories(ws).filter((c) => c.name !== name);
+			for (const t of ws.tasks) if (t.category === name) t.category = moveTo;
+			for (const g of ws.goals) if (g.category === name) g.category = moveTo;
+			ws.settings.reserved = (ws.settings.reserved ?? []).filter((r) => r.category !== name);
+		});
+		toast(`Category removed · its tasks moved to ${moveTo}`, {
+			action: 'Undo',
+			onAction: () => this.undo()
+		});
+	}
+
 	/** Whether this account may use a theme. */
 	themeAllowed(t: { access: string }) {
 		if (t.access === 'developer') return !!auth.user?.developer;
@@ -655,6 +796,21 @@ class WorkspaceStore {
 		const at = (d: string, m: number) => `${fmtShort(d)} ${minToHM(m)}`;
 		if (t.status === 'done')
 			return { tone: 'plain', text: 'Done. Its blocks stay on the calendar, marked as done.' };
+		if (t.someday)
+			return {
+				tone: 'plain',
+				text: 'Parked as Someday/Maybe, so not planned. Bring it back from Park it.'
+			};
+		if (t.waiting)
+			return {
+				tone: 'plain',
+				text: `Waiting for ${t.waiting}, so not planned until you clear it.`
+			};
+		if (t.quadrant === 'delegate' || t.quadrant === 'drop')
+			return {
+				tone: 'plain',
+				text: `Put in ${t.quadrant === 'delegate' ? 'Delegate' : 'Eliminate'} on the Matrix, so not planned.`
+			};
 		if (t.inbox)
 			return {
 				tone: 'warn',
@@ -727,7 +883,7 @@ class WorkspaceStore {
 	/** Drag and drop: keep a task at a start time on a day. */
 	moveTo(id: string, date: string, start: number) {
 		const t = this.task(id);
-		if (!t || t.status === 'done' || t.quick || t.inbox) return;
+		if (!t || t.status === 'done' || t.inbox) return;
 		let s = Math.round(start / 5) * 5;
 		if (date === clock.today) s = Math.max(s, Math.ceil(nowMin(clock.now) / 5) * 5);
 		s = Math.max(0, Math.min(s, 24 * 60 - 15));

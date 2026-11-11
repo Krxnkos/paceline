@@ -65,11 +65,15 @@ export function agendaFor(
 			});
 		}
 	}
+	const seen = new Map<string, number>();
 	for (const b of plan.byDate[date] ?? []) {
 		const t = tasks.find((x) => x.id === b.taskId);
 		if (!t) continue;
+		const n = seen.get(t.id) ?? 0;
+		seen.set(t.id, n + 1);
 		items.push({
-			key: `b-${b.taskId}-${b.start}`,
+			// Stable per task and day, so a moved block animates to its new place.
+			key: `b-${b.taskId}-${n}`,
 			kind: 'block',
 			start: b.start,
 			end: b.end,

@@ -24,7 +24,7 @@
 		if (ui.newTask.open) {
 			text = ui.newTask.text ?? '';
 			draft = {
-				category: 'Deep Work',
+				category: workspace.defaultCategory(),
 				priority: 3,
 				estimateMin: 30,
 				start: 'auto',

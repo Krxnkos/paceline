@@ -26,7 +26,7 @@
 		e.stopPropagation();
 		onchange?.();
 	}}
-	class="inline-flex flex-none items-center justify-center rounded-[1px] border transition-colors duration-150 {checked
+	class="inline-flex flex-none items-center justify-center rounded-[1px] border transition-[background-color,border-color,transform] duration-150 active:scale-90 {checked
 		? 'border-accent bg-accent text-accent-ink'
 		: 'border-line-3 bg-transparent hover:border-ink-3'} disabled:opacity-40"
 	style="width: {size}px; height: {size}px"

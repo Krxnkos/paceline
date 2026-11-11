@@ -9,6 +9,7 @@ import type {
 	Settings,
 	Task
 } from '../types.ts';
+import { DEFAULT_CATEGORIES } from '../types.ts';
 import {
 	addDays,
 	dayWorkMinutes,
@@ -102,6 +103,7 @@ export function isFillable(t: Task, settings: Settings): boolean {
 	return (
 		settings.fillQuickWins !== false &&
 		!!t.quick &&
+		!isParked(t) &&
 		t.status !== 'done' &&
 		!t.inbox &&
 		t.start !== 'manual'
@@ -112,6 +114,8 @@ export function isFillable(t: Task, settings: Settings): boolean {
 export function score(t: Task, today: ISODate): number {
 	let s = 0;
 	if (t.start === 'asap') s += 1000;
+	// Eisenhower "Do first" jumps the queue.
+	if (t.quadrant === 'do') s += 300;
 	if (t.status === 'doing') s += 200;
 	if (t.status === 'review') s += 120;
 	s += (6 - t.priority) * 40;
@@ -129,9 +133,21 @@ export function isPersonalDay(settings: Settings, date: ISODate): boolean {
 	return k === 'personal' || k === 'off';
 }
 
-/** A task the planner may place: open, triaged, not a quick win, not manual. */
+/** Parked by the person: someday/maybe, waiting on someone, or delegated/dropped in the Matrix. */
+export function isParked(t: Task): boolean {
+	return !!t.someday || !!t.waiting || t.quadrant === 'delegate' || t.quadrant === 'drop';
+}
+
+/** A task the planner may place: open, triaged, not a quick win, not manual, not parked. */
 export function isSchedulable(t: Task): boolean {
-	return t.status !== 'done' && !t.inbox && !t.quick && t.start !== 'manual' && remainingMin(t) > 0;
+	return (
+		t.status !== 'done' &&
+		!t.inbox &&
+		!t.quick &&
+		t.start !== 'manual' &&
+		!isParked(t) &&
+		remainingMin(t) > 0
+	);
 }
 
 function subtract(free: Interval[], s: number, e: number): Interval[] {
@@ -218,7 +234,12 @@ export function buildPlan(
 	meetings: Meeting[],
 	settings: Settings,
 	now: Date,
-	active: ActiveBlock | null = null
+	active: ActiveBlock | null = null,
+	/**
+	 * Tasks to place first, in this order (Eat the Frog, Ivy Lee): they get the
+	 * earliest free time and ignore morning/afternoon preferences.
+	 */
+	first: string[] = []
 ): Plan {
 	const today = iso(now);
 	const live = active && active.date === today && active.end > nowMin(now) ? active : null;
@@ -261,7 +282,11 @@ export function buildPlan(
 	};
 
 	const byId = new Map(tasks.map((t) => [t.id, t]));
-	const open = tasks.filter(isSchedulable).sort((a, b) => score(b, today) - score(a, today));
+	const rank = (t: Task) => {
+		const i = first.indexOf(t.id);
+		return i < 0 ? score(t, today) : 100_000 - i;
+	};
+	const open = tasks.filter(isSchedulable).sort((a, b) => rank(b) - rank(a));
 	const openIds = new Set(open.map((t) => t.id));
 	const placed: Record<string, Placement | null> = {};
 	const beyond: string[] = [];
@@ -362,7 +387,11 @@ export function buildPlan(
 			// A dragged task is one block; confirmed blocks may leave some still to plan.
 			r = t.fixed ? 0 : Math.max(0, r - pin.reduce((n, b) => n + b.end - b.start, 0));
 		}
-		const afternoonFirst = t.category === 'Admin' || t.category === 'Comms';
+		const afternoonFirst =
+			!first.includes(t.id) &&
+			(settings.categories?.length ? settings.categories : DEFAULT_CATEGORIES).find(
+				(c) => c.name === t.category
+			)?.when === 'afternoon';
 		for (let i = Math.max(0, diffDays(earliestDate, today)); i < HORIZON_DAYS && r > 0; i++) {
 			const date = addDays(today, i);
 			const personal = t.scope === 'personal';

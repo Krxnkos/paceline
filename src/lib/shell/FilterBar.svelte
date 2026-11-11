@@ -5,7 +5,6 @@
 	import Toggle from '../ui/Toggle.svelte';
 	import { filters } from '../stores/filters.svelte.ts';
 	import { workspace } from '../stores/workspace.svelte.ts';
-	import { CATEGORIES } from '../types.ts';
 
 	let {
 		count,
@@ -20,7 +19,7 @@
 	]);
 	const catOptions = [
 		{ value: 'all', label: 'All categories' },
-		...CATEGORIES.map((c) => ({ value: c, label: c }))
+		...workspace.catNames.map((c) => ({ value: c, label: c }))
 	];
 </script>
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { flip } from 'svelte/animate';
+	import { fly } from 'svelte/transition';
+	import { backOut, cubicIn } from 'svelte/easing';
 	import { toasts } from '../stores/toast.svelte.ts';
 </script>
 
@@ -8,7 +11,10 @@
 >
 	{#each toasts.items as t (t.id)}
 		<div
-			class="pointer-events-auto flex max-w-[min(520px,100%)] animate-pop items-center gap-4 py-2.5 pr-2.5 pl-4 text-[13.5px] font-semibold {t.tone ===
+			animate:flip={{ duration: 220 }}
+			in:fly={{ y: 16, duration: 280, easing: backOut }}
+			out:fly={{ x: -24, duration: 180, easing: cubicIn }}
+			class="pointer-events-auto flex max-w-[min(520px,100%)] items-center gap-4 py-2.5 pr-2.5 pl-4 text-[13.5px] font-semibold {t.tone ===
 			'err'
 				? 'bg-flare text-signal-ink'
 				: 'bg-ink text-canvas'}"

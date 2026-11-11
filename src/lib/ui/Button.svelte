@@ -50,7 +50,7 @@
 
 	const classes = $derived(
 		[
-			'inline-flex items-center justify-center rounded-xs border whitespace-nowrap transition-colors duration-150 select-none',
+			'inline-flex items-center justify-center rounded-xs border whitespace-nowrap select-none transition-[background-color,border-color,color,transform,box-shadow] duration-150 ease-out active:scale-[0.97]',
 			'disabled:opacity-45 disabled:pointer-events-none',
 			variants[variant],
 			sizes[size],

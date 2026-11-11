@@ -37,7 +37,7 @@ Built from the _Paceline — Web App Design_ canvas: identity, six colour themes
   with this week against last, 14 days of focus, the week ahead and where the time went.
 - Task drawer via a shareable `?task=T-014` URL, a command palette (`⌘K` / `Ctrl K`), a focus overlay, undo on
   every change (`⌘Z`) and keyboard navigation (`G` then `T/I/W/A/B/L/C/P/O/S`).
-- **Six themes** (Carbon, Chalk, Midnight, Frost, Ember, Sand) plus Match system, with no flash on load.
+- **Themes** (Carbon, Chalk and more on paid plans) plus Match system, with no flash on load and smooth page transitions.
 - Responsive down to phones: an off-canvas sidebar and bottom tabs below 860 px. Installable through a web manifest.
 
 ## Run it
@@ -177,6 +177,33 @@ collection. Timed plans fall back to Free by themselves when they run out. Devel
 from the console.
 
 Project and goal limits are enforced on the server. Theme, Timeline and export gates are in the app.
+
+## Planning methods
+
+Paceline isn't tied to one way of working. Under **Settings ▸ Planning method** (also asked at sign-up):
+
+| Method                       | What it does                                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Time blocking**            | The planner fits work into your real hours around meetings, lunch and a buffer.                         |
+| **Must-dos 1–3**             | Three things that make the day a win; two more unlock once they're done.                                |
+| **Ivy Lee**                  | Six tasks, worked strictly in order. Reorder them on Today; that order is planned first.                |
+| **1-3-5**                    | One big (90 min+), three medium (30–89 min) and five small tasks, sized by estimate.                    |
+| **Eat the frog**             | Mark one task as the frog and it is planned first thing, before anything else.                          |
+| **Eisenhower Matrix**        | `/matrix`: drag tasks between Do first, Schedule, Delegate and Eliminate.                               |
+| **GTD**                      | Inbox, Someday/Maybe and Waiting for (each task's _Park it_), plus a guided weekly review at `/review`. |
+| **Focus rhythms**            | Pomodoro (25/5, long break every fourth), 52/17, 90/20, Flowtime (count up) or Fit the block.           |
+| **Batching and day theming** | Reserved time keeps slots for one category; _Whole day_ gives a day a theme.                            |
+| **Quick wins**               | Small tasks fill leftover gaps and reserved time nobody needed.                                         |
+
+**Categories** are your own (Settings ▸ Categories): name, colour and whether the planner puts them in the
+morning or afternoon. Capture with `#` and the start of a name. **Away days** (training, university, client site)
+take your own label. New accounts start on a plain Monday–Friday, 09:00–17:00 week.
+
+## Moving things
+
+Drag any block on Today or Week, a card on the Board or Matrix, or a chip on the Calendar. It works with a mouse,
+pen or finger (press and hold on touch). The block follows the pointer, snaps to 15 minutes and shows exactly where
+it will land; Escape cancels. The task drawer also has **Move to** for an exact day and time.
 
 ## Personal time (Pro and Ultimate)
 

@@ -171,9 +171,11 @@ export function onTimeRate(tasks: Task[], today: ISODate): { rate: number | null
 export function categoryHours(
 	tasks: Task[],
 	from: ISODate,
-	to: ISODate
+	to: ISODate,
+	names: Category[] = []
 ): { label: Category; hours: number }[] {
-	const cats: Category[] = ['Deep Work', 'Study', 'Review', 'Admin', 'Comms'];
+	// The person's categories plus any older ones still on logged tasks.
+	const cats = [...new Set([...names, ...tasks.map((t) => t.category)])];
 	return cats
 		.map((c) => ({ label: c, hours: loggedHours(tasks, from, to, c) }))
 		.sort((a, b) => b.hours - a.hours);

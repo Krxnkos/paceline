@@ -372,6 +372,11 @@
 	dialog::backdrop {
 		background: var(--scrim);
 	}
+	@media (prefers-reduced-motion: no-preference) {
+		dialog::backdrop {
+			animation: fade-in 200ms ease-out;
+		}
+	}
 	@media (prefers-reduced-motion: reduce) {
 		*,
 		*::before,
@@ -439,10 +444,15 @@
 		transform: none;
 	}
 }
-@keyframes slide-in {
+@keyframes fade-in {
 	from {
 		opacity: 0;
-		transform: translateX(24px);
+	}
+}
+@keyframes slide-in {
+	from {
+		opacity: 0.4;
+		transform: translateX(48px);
 	}
 	to {
 		opacity: 1;
@@ -461,11 +471,92 @@
 }
 
 @utility animate-pop {
-	animation: pop 150ms ease-out;
+	animation: pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @utility animate-slide {
-	animation: slide-in 180ms ease-out;
+	animation: slide-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 @utility animate-blink {
 	animation: blink 1s steps(1) infinite;
+}
+
+/* ── Motion ──────────────────────────────────────────────── */
+.pl-dragging,
+.pl-dragging * {
+	cursor: grabbing !important;
+	user-select: none;
+	-webkit-user-select: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+	/* Calendar blocks glide to their new place when the plan changes. */
+	.pl-block {
+		transition:
+			top 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			height 300ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			opacity 160ms ease,
+			box-shadow 160ms ease;
+	}
+	/* The drag preview snaps quickly between 15-minute steps. */
+	.pl-ghost {
+		transition: top 90ms ease-out;
+	}
+	.pl-row > button {
+		transition:
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			box-shadow 180ms ease,
+			opacity 160ms ease;
+	}
+	.pl-dropline {
+		animation: grow 160ms ease-out;
+		transform-origin: left;
+	}
+}
+@keyframes grow {
+	from {
+		transform: scaleX(0.3);
+		opacity: 0;
+	}
+}
+
+/* Page changes cross-fade and rise slightly; the sidebar and top bar stay put. */
+@media (prefers-reduced-motion: no-preference) {
+	main#main {
+		view-transition-name: page;
+	}
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+	::view-transition-old(page) {
+		animation: page-out 140ms ease-in both;
+	}
+	::view-transition-new(page) {
+		animation: page-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+	/* Hover lift for cards and rows that open something. */
+	.pl-lift {
+		transition:
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			box-shadow 180ms ease,
+			border-color 150ms ease;
+	}
+	.pl-lift:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 6px 20px -12px rgb(0 0 0 / 0.5);
+	}
+	html {
+		scroll-behavior: smooth;
+	}
+}
+@keyframes page-out {
+	to {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+}
+@keyframes page-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
 }
